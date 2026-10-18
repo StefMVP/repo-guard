@@ -6,30 +6,32 @@ confirmed bugs, inspection findings and optional improvements.
 
 ## README
 
-Keep setup, use and relevant limits in the README. Use existing reference
-documents when needed. Create new prose documents when the user requests them.
-Keep review findings and proposed changes in the private HTML report.
+Write the README in ASD-STE100 Simplified Technical English. It tells a reader
+what the project does, how to set it up and how to use it. Keep review findings
+and proposed changes in the private HTML report. Keep wording that the user
+selected.
 
-Use purpose, one useful visual, a short start path and a small use section as the
-default. Keep development to the main check command when that is sufficient.
-Put detailed test recipes in the existing CLI help. Use a collapsed section for
-an optional setup that only some users need. Let CLI help describe routine
-settings instead of repeating every option. Preserve wording the user selected.
+- Start with one sentence that says what the project does. Then state what it
+  does, what it does not do, and its limits.
+- Name each section after a task of the reader, for example "Setup", "Saved
+  files" or "Export each day".
+- State the platforms, tools and accounts before the commands that need them.
+  Give the shortest tested path from installation to a useful result. Use
+  public sample values and portable paths.
+- After a command block, say what the commands do and where the output goes.
+- Use sentences and command blocks. Add a table, a tree or an image only when
+  text cannot show the same data clearly.
+- Put the full option list in the CLI help. End with the help command and the
+  check command.
+- Put design reasons, history and measurements in other documents, and only
+  when the user asks for them.
+- Use short sentences, active voice, simple words and one term for one thing.
+  Remove claims, repetition and filler. Keep exact command names and API
+  identifiers.
+- Check links, file paths and image references. Make sure that the license
+  link agrees with the license that the user selected.
 
-- Start with a short statement of what the project does and the problem it solves.
-- Give the shortest verified path from installation to a useful result. State
-  required platforms, tools and authentication before the commands that need them.
-  Use public sample values and portable paths. Check the expected result.
-- Show one main use with a command, code sample or screenshot. Keep the setup
-  steps in order. Separate installed use from source development when they differ.
-- Add configuration, development, troubleshooting or limits only when they help
-  the reader use the project or make a decision.
-- Check links, file paths and image references. Confirm that the license link
-  matches the license the user selected. Use only the sections the project needs.
-- Use short sentences, active voice, direct verbs and consistent technical
-  terms. Put one instruction in each sentence. State facts and remove
-  unsupported claims, repeated explanations and generic filler. Keep exact
-  command names and API identifiers.
+A larger project can have more sections. Each section describes one task.
 
 ## GitHub metadata
 
