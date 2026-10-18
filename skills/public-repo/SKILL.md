@@ -28,6 +28,11 @@ approve current files or GitHub content. A force push into the original can leav
 old PR refs and cached commits. Finish all source changes first; a later change
 needs a new copy.
 
+With fresh history, the old commits, refs and GitHub text stay private. Review
+the current tree only, and test it in a `git clone --depth 1` copy. Audit only
+the clean copy, as the next paragraphs describe. A full-history audit of the
+original is for a release that keeps its history.
+
 To release part of a larger private repository, make a branch in an ignored
 worktree. Delete what the release does not include, restructure and commit
 there. Then run `clean-history` from that worktree. The original branch does
