@@ -14,10 +14,9 @@ decision. An analysis request produces findings and options. Implementation
 follows the changes the user selects. A ready review records the result of the
 checks; the user's release decision remains a separate step.
 
-Use the user's exact repository name for a requested repository operation.
-Repository creation, naming, history removal and public visibility each need an
-explicit user request. Present license and history choices in the report for
-the user to decide. A general cleanup request authorizes the selected code work.
+Use the user's exact repository name. The user selects the name, the license
+and the history in the report. A general cleanup request authorizes the selected
+code work. Public visibility needs the user's approval (step 5).
 
 When the user requests history removal for a first release, use `repo-guard
 clean-history --repo CHECKOUT --destination CHECKOUT/.worktrees/public-source
@@ -29,9 +28,8 @@ old PR refs and cached commits. Finish all source changes first; a later change
 needs a new copy.
 
 With fresh history, the old commits, refs and GitHub text stay private. Review
-the current tree only, and test it in a `git clone --depth 1` copy. Audit only
-the clean copy, as the next paragraphs describe. A full-history audit of the
-original is for a release that keeps its history.
+and test only the current tree. Use a `git clone --depth 1` copy for the test.
+Audit only the clean copy.
 
 To release part of a larger private repository, make a branch in an ignored
 worktree. Delete what the release does not include, restructure and commit
@@ -55,11 +53,9 @@ clone of the old repository to its new name before you create the new one.
 GitHub stops the redirect when a new repository uses the name. An old clone
 would then push into the new repository.
 
-After the user explicitly requests creation and chooses its exact name, create
-a private repository, for example with `gh repo create OWNER/REPO --private
---source CHECKOUT --remote origin`. Push only when the user requests it. Then
-run the full audit and record a new ready review against that actual target
-before publication.
+For a new repository, make it private and push the clean copy:
+`gh repo create OWNER/REPO --private --source CHECKOUT --remote origin`, then
+`git push -u origin main`. Run the full audit and record a ready review for it.
 
 For a review of an existing GitHub repository or the final release gate:
 
@@ -101,9 +97,9 @@ For a review of an existing GitHub repository or the final release gate:
    findings before recording `ready`. After any code, ref, remote content or
    policy change, run a new audit and update the review.
    End preparation here and wait for the user's decision.
-5. After the ready review, ask the user to sign off on publication. Agreement to
-   a plan is not a sign-off. After an explicit sign-off for this repository, run
-   `repo-guard publish --repo CHECKOUT --confirm OWNER/REPO`. The command repeats
+5. Give the user the link to the private repository. Ask the user to approve
+   publication. Run `repo-guard publish --repo CHECKOUT --confirm OWNER/REPO`
+   only after the user approves in a reply to that request. The command repeats
    the audit and requires a matching ready review and pushed default branch.
    It then turns on GitHub secret scanning and push protection and confirms
    both. Without that confirmation, the repository becomes private again.
