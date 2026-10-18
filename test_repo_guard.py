@@ -361,7 +361,8 @@ class GuardTest(unittest.TestCase):
             second = guard.snapshot(self.repo, {})
         self.assertNotEqual(first, second)
 
-    def test_publication_reaches_github_only_after_valid_review(self):
+    def publish_with(self, security):
+        """Publish against a mocked GitHub that reports the given security state."""
         state = guard.state_dir(self.repo)
         report = b'<!doctype html><html><body>Inspected code, documentation, rights, tests, history and GitHub content.</body></html>'
         (state / 'review.html').write_bytes(report)
@@ -369,19 +370,64 @@ class GuardTest(unittest.TestCase):
         guard.save(state / 'review.json', {'snapshot': 'current', 'decision': 'ready',
                    'report_sha256': hashlib.sha256(report).hexdigest()})
         self.git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+        self.git('config', 'repoGuard.profile', 'private')
         audit = {'snapshot': 'current', 'findings': [], 'github': {'full_name': 'owner/project'}}
         original = guard.run
         requests = []
         def dispatch(args, repo=None, **kwargs):
             if args[:2] == ['gh', 'api']:
-                requests.append((args, repo))
+                requests.append(args + ([kwargs['data'].decode()] if kwargs.get('data') else []))
                 return subprocess.CompletedProcess(args, 0, b'', b'')
             return original(args, repo, **kwargs)
+        replies = [{'default_branch': 'main'}, {'private': False}, {'private': False, 'security_and_analysis': security}]
         with patch.object(guard, 'prepare', return_value=audit), \
-             patch.object(guard, 'gh_json', side_effect=[{'default_branch': 'main'}, {'private': False}]), \
+             patch.object(guard, 'gh_json', side_effect=replies), \
              patch.object(guard, 'run', side_effect=dispatch):
-            guard.publish(self.repo, 'owner/project')
-        self.assertEqual(requests, [(['gh', 'api', '--method', 'PATCH', 'repos/owner/project', '-f', 'visibility=public'], self.repo)])
+            try:
+                guard.publish(self.repo, 'owner/project')
+            except guard.GuardError as error:
+                return requests, error
+        return requests, None
+
+    def test_publication_turns_on_secret_scanning_and_confirms_it(self):
+        enabled = {'secret_scanning': {'status': 'enabled'}, 'secret_scanning_push_protection': {'status': 'enabled'}}
+        requests, error = self.publish_with(enabled)
+        self.assertIsNone(error)
+        self.assertEqual(requests[0], ['gh', 'api', '--method', 'PATCH', 'repos/owner/project', '-f', 'visibility=public'])
+        self.assertEqual(requests[1][:6], ['gh', 'api', '--method', 'PATCH', 'repos/owner/project', '--input'])
+        self.assertEqual(json.loads(requests[1][-1]), {'security_and_analysis': enabled})
+        self.assertEqual(len(requests), 2)
+        # Future work in this checkout gets the full public checks.
+        self.assertEqual(self.git('config', 'repoGuard.profile'), 'candidate')
+
+    def test_publication_returns_to_private_without_confirmed_scanning(self):
+        requests, error = self.publish_with({'secret_scanning': {'status': 'enabled'},
+                                             'secret_scanning_push_protection': {'status': 'disabled'}})
+        self.assertIsInstance(error, guard.GuardError)
+        self.assertIn('private again', str(error))
+        self.assertEqual(requests[-1], ['gh', 'api', '--method', 'PATCH', 'repos/owner/project', '-f', 'visibility=private'])
+
+    def test_audit_of_a_public_repository_needs_secret_scanning(self):
+        self.stage('README.md', 'Example project\n')
+        self.stage('LICENSE', 'Example license\n')
+        self.git('commit', '-qm', 'Documentation')
+        self.git('remote', 'add', 'origin', 'https://github.com/owner/project.git')
+        def surface(security):
+            return {'repository': {'full_name': 'owner/project', 'private': False, 'security_and_analysis': security},
+                    'resources': {}}
+        original = guard.run
+        def local(args, repo=None, **kwargs):
+            if args[:2] == ['git', 'fetch']:
+                return subprocess.CompletedProcess(args, 0, b'', b'')
+            return original(args, repo, **kwargs)
+        for security, expected in (({'secret_scanning': {'status': 'disabled'},
+                                     'secret_scanning_push_protection': {'status': 'enabled'}}, True),
+                                   ({'secret_scanning': {'status': 'enabled'},
+                                     'secret_scanning_push_protection': {'status': 'enabled'}}, False)):
+            with self.subTest(security=security), patch.object(guard, 'github_surface', return_value=surface(security)), \
+                 patch.object(guard, 'run', side_effect=local):
+                rules = {item['rule'] for item in guard.prepare(self.repo)['findings']}
+            self.assertEqual('secret-scanning-off' in rules, expected)
 
     def test_binary_approval_applies_to_exact_content(self):
         self.stage('image.png', 'Placeholder')
@@ -674,15 +720,61 @@ class GuardTest(unittest.TestCase):
         result, calls = self.gh('repo', 'create', 'example-owner/internal-tool', '--private',
                                 '--description', 'Northwind tool')
         self.assertEqual(result.returncode, 0, result.stderr)
-        result, calls = self.gh('repo', 'create', 'example-owner/new-tool', '--public',
-                                '--description', 'Northwind tool')
-        self.assertEqual(result.returncode, 1)
+
+    def test_gh_wrapper_sends_public_visibility_to_publish(self):
+        for args in (['repo', 'create', 'example-owner/new-tool', '--public'],
+                     ['repo', 'create', 'example-owner/new-tool'],
+                     ['repo', 'edit', 'example-owner/tool', '--visibility', 'public', '--accept-visibility-change-consequences'],
+                     ['repo', 'edit', 'example-owner/tool', '--visibility=public']):
+            with self.subTest(args=args):
+                result, calls = self.gh(*args)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(b'repo-guard publish', result.stderr)
+                self.assertEqual(calls, [])
+        for args in (['repo', 'create', 'example-owner/new-tool', '--private'],
+                     ['repo', 'edit', 'example-owner/tool', '--visibility', 'private', '--accept-visibility-change-consequences']):
+            with self.subTest(args=args):
+                result, calls = self.gh(*args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(calls[-1]['args'], args)
 
     def test_gh_wrapper_refuses_a_post_when_the_check_cannot_run(self):
         result, calls = self.gh('pr', 'comment', '1', '-R', 'example-owner/internal', '--body', 'Notes',
                                 environment={'REPO_GUARD_BINARY': str(self.root / 'absent')})
         self.assertEqual(result.returncode, 2)
         self.assertFalse(any(call['args'][0] == 'pr' for call in calls))
+
+    def test_audit_keeps_a_private_profile_during_cleanup(self):
+        self.stage('README.md', 'Example project\n')
+        self.stage('LICENSE', 'Example license\n')
+        self.git('commit', '-qm', 'Documentation')
+        self.git('remote', 'add', 'origin', 'https://github.com/owner/project.git')
+        surface = {'repository': {'full_name': 'owner/project', 'private': True}, 'resources': {}}
+        original = guard.run
+        def local(args, repo=None, **kwargs):
+            if args[:2] == ['git', 'fetch']:
+                return subprocess.CompletedProcess(args, 0, b'', b'')
+            return original(args, repo, **kwargs)
+        for configured, expected in (('private', 'private'), (None, 'candidate')):
+            if configured:
+                self.git('config', 'repoGuard.profile', configured)
+            else:
+                self.git('config', '--unset', 'repoGuard.profile')
+            with self.subTest(configured=configured), patch.object(guard, 'github_surface', return_value=surface), \
+                 patch.object(guard, 'run', side_effect=local):
+                guard.prepare(self.repo)
+            self.assertEqual(self.git('config', 'repoGuard.profile'), expected)
+            self.assertIn('repo-guard', self.git('config', '--get', 'hook.repo-guard-pre-commit.command'))
+
+    def test_clean_history_keeps_the_source_local_excludes(self):
+        self.git('remote', 'add', 'origin', 'https://github.com/owner/project.git')
+        with (self.repo / '.git/info/exclude').open('a') as target:
+            target.write('/.ws/\n')
+        destination = self.root / 'clean'
+        self.clean_copy(destination)
+        (destination / '.ws').mkdir()
+        (destination / '.ws/env.json').write_text('{}')
+        self.assertEqual(guard.git(destination, 'status', '--porcelain').strip(), b'')
 
     def test_generated_report_does_not_replace_a_tracked_report(self):
         self.stage('reports/report.html', '<html><body>Existing report</body></html>')

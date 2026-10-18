@@ -32,6 +32,15 @@ class GuardError(Exception):
     pass
 
 
+# A public repository keeps GitHub's own credential checks on.
+SCANNING = {'secret_scanning': {'status': 'enabled'}, 'secret_scanning_push_protection': {'status': 'enabled'}}
+
+
+def scanning_off(repository):
+    state = repository.get('security_and_analysis') or {}
+    return [key for key in SCANNING if (state.get(key) or {}).get('status') != 'enabled']
+
+
 def run(args, repo=None, data=None, allowed=(0,), env=None):
     # A child gets no terminal input: a prompt must fail, not wait.
     result = subprocess.run([str(arg) for arg in args], cwd=repo, input=data,
@@ -528,6 +537,11 @@ def clean_history(repo, destination, confirm):
     email = f'{identity["id"]}+{login}@users.noreply.github.com'
     destination.mkdir(parents=True, mode=0o700)
     git(destination, 'init', '-q', '--initial-branch=main')
+    # Local excludes, such as tool folders of this machine, apply to the copy too.
+    exclude = Path(git(repo, 'rev-parse', '--git-path', 'info/exclude').decode().strip())
+    exclude = exclude if exclude.is_absolute() else repo / exclude
+    if exclude.is_file():
+        (destination / '.git/info/exclude').write_text(exclude.read_text())
     for filename, mode in entries:
         target = destination / os.fsdecode(filename)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -729,7 +743,10 @@ def prepare(repo, local_only=False, target=None):
         raise GuardError('Use an exact OWNER/REPO as the planned target.')
     if git(repo, 'rev-parse', '--is-shallow-repository').strip() == b'true':
         raise GuardError('Full history is required. Fetch the complete repository before this audit.')
-    enable(repo, 'candidate')
+    # A private profile stays during cleanup, so commits that still hold
+    # private names can land. clean-history and publish turn on candidate.
+    current = git(repo, 'config', '--get', 'repoGuard.profile', allowed=(0, 1)).decode().strip()
+    enable(repo, current or 'candidate')
     if local_only:
         source = load(state_dir(repo) / 'clean-source.json', {})
         name = target or source.get('source_repository') or github_name(repo)
@@ -775,6 +792,8 @@ def prepare(repo, local_only=False, target=None):
         for release in page:
             for asset in release.get('assets', []):
                 output.append(finding('release-asset-review', f'GitHub asset {asset["id"]}'))
+    if surface['repository'].get('private') is False and scanning_off(surface['repository']):
+        output.append(finding('secret-scanning-off', 'GitHub settings'))
     files = set(git(repo, 'ls-tree', '-r', '--name-only', 'HEAD').decode().splitlines())
     if not any(Path(item).name.lower().startswith('readme') for item in files if '/' not in item):
         output.append(finding('missing-readme', 'README.md'))
@@ -862,7 +881,19 @@ def publish(repo, confirm):
     actual = gh_json(repo, 'repos/' + confirm)
     if actual['private']:
         raise GuardError('GitHub did not confirm public visibility.')
-    print(f'Public: https://github.com/{confirm}')
+    # Secret scanning is available after the change to public. A public
+    # repository without it must not remain public.
+    try:
+        run(['gh', 'api', '--method', 'PATCH', f'repos/{confirm}', '--input', '-'], repo,
+            data=json.dumps({'security_and_analysis': SCANNING}).encode())
+        missing = scanning_off(gh_json(repo, 'repos/' + confirm))
+    except GuardError:
+        missing = list(SCANNING)
+    if missing:
+        run(['gh', 'api', '--method', 'PATCH', f'repos/{confirm}', '-f', 'visibility=private'], repo)
+        raise GuardError(f'GitHub did not confirm {", ".join(missing)}. The repository is private again.')
+    enable(repo, 'candidate')
+    print(f'Public: https://github.com/{confirm} (secret scanning and push protection on)')
 
 
 def check_text(data, label, profile, config):
@@ -968,8 +999,23 @@ def post_profile(target, gh):
     return ('private' if result.returncode == 0 and result.stdout.strip() == b'true' else 'candidate'), target
 
 
+def makes_public(argv):
+    """Return True when gh would create a public repository or change one to public."""
+    if '--help' in argv:
+        return False
+    if argv[:2] in (['repo', 'create'], ['repo', 'new']):
+        return not {'--private', '--internal'} & set(argv)
+    return argv[:2] == ['repo', 'edit'] and ('--visibility=public' in argv or any(
+        flag == '--visibility' and value == 'public' for flag, value in zip(argv, argv[1:])))
+
+
 def gh_wrapper(argv):
     """Check the text that gh posts to GitHub, then run the real gh."""
+    # Only publish audits a repository and turns on GitHub secret scanning.
+    if makes_public(argv):
+        print('repo-guard: gh did not make the repository public. Create it with --private, '
+              'then run repo-guard publish.', file=sys.stderr)
+        return 1
     try:
         gh = real_gh()
         post = gh_posts(argv)

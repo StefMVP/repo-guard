@@ -25,7 +25,13 @@ clean-history --repo CHECKOUT --destination CHECKOUT/.worktrees/public-source
 It makes a separate local repository with the current tracked tree and one
 commit. Keep the original private. History removal does not
 approve current files or GitHub content. A force push into the original can leave
-old PR refs and cached commits.
+old PR refs and cached commits. Finish all source changes first; a later change
+needs a new copy.
+
+To release part of a larger private repository, make a branch in an ignored
+worktree. Delete what the release does not include, restructure and commit
+there. Then run `clean-history` from that worktree. The original branch does
+not change.
 
 Before a new GitHub repository exists, audit the clean copy with `repo-guard
 prepare-public --repo CHECKOUT/.worktrees/public-source --local-only
@@ -39,6 +45,11 @@ standalone repository. If the user chooses history replacement in the existing
 repository, review retained PR refs and cached commits before changing visibility.
 Present the concrete target, history, metadata and license in the HTML report.
 
+If the user renamed the old repository to free its name, repoint each local
+clone of the old repository to its new name before you create the new one.
+GitHub stops the redirect when a new repository uses the name. An old clone
+would then push into the new repository.
+
 After the user explicitly requests creation and chooses its exact name, create
 a private repository, for example with `gh repo create OWNER/REPO --private
 --source CHECKOUT --remote origin`. Push only when the user requests it. Then
@@ -47,7 +58,8 @@ before publication.
 
 For a review of an existing GitHub repository or the final release gate:
 
-1. Run `repo-guard prepare-public --repo CHECKOUT`. This enables local hooks,
+1. Run `repo-guard prepare-public --repo CHECKOUT`. This enables local hooks
+   (a `private` profile stays during cleanup),
    fetches complete remote branches, tags and pull request heads, scans Git
    history, and checks GitHub issue/PR text, release text, retained Actions logs
    and accessible Actions artifacts. Read the local `audit.json` it names.
@@ -87,7 +99,13 @@ For a review of an existing GitHub repository or the final release gate:
 5. When the user requests the actual visibility change for this repository, run
    `repo-guard publish --repo CHECKOUT --confirm OWNER/REPO`. The command repeats
    the audit and requires a matching ready review and pushed default branch.
+   It then turns on GitHub secret scanning and push protection and confirms
+   both. Without that confirmation, the repository becomes private again.
    A request for a test case or readiness review does not request publication.
+6. After publication, make the clean checkout the working checkout. Move the
+   old private checkout aside, then move the clean checkout to the original
+   path, so hooks and links that use that path continue to work. Register the
+   moved checkout again with any tool that records checkout paths.
 
 For continuing work, `repo-guard enable --repo CHECKOUT --profile candidate`
 installs staged-file, commit-message and outgoing-commit checks. Existing Git

@@ -85,7 +85,8 @@ export PATH="/path/to/repo-guard/shims:$PATH"
 It checks the titles, bodies, notes, descriptions, topics and files that these
 commands post: `pr create|edit|comment|review|merge`, `issue create|edit|comment`,
 `release create|edit`, `repo create|edit` and `gist create|edit`. Other `gh`
-commands run unchanged.
+commands run unchanged. The wrapper does not create a public repository or
+change a repository to public. Use `repo-guard publish` for that.
 
 A public repository, or a checkout with the `candidate` profile, gets the full
 check. A private repository gets the credential check. A public gist gets the
@@ -108,10 +109,11 @@ standard input. Add `--profile private` to check only for credentials, and
 
    This scans all branches, tags, pull request heads and commit metadata. It
    reads GitHub issues, pull requests, releases, Actions logs and artifacts.
-   It turns on the `candidate` hooks in that clone and changes nothing on
-   GitHub. It writes a private HTML report at `reports/report.html`, which Git
-   ignores. The report also lists hardcoded paths, hosts, accounts, commands
-   and limits that another user can need to change.
+   It turns on the `candidate` hooks in a clone that has no profile; a
+   `private` profile stays during cleanup. It changes nothing on GitHub. It
+   writes a private HTML report at `reports/report.html`, which Git ignores.
+   The report also lists hardcoded paths, hosts, accounts, commands and limits
+   that another user can need to change.
 
 2. Review the code and the manual checks in the report. Write your review as an
    HTML file and record it:
@@ -130,7 +132,11 @@ standard input. Add `--profile private` to check only for credentials, and
    ```
 
    This runs the audit again. It changes visibility only if the result matches
-   the ready review and `HEAD` matches the pushed default branch.
+   the ready review and `HEAD` matches the pushed default branch. Then it turns
+   on GitHub secret scanning and push protection and confirms both. Without
+   that confirmation, the repository becomes private again. The clone gets the
+   `candidate` profile. An audit of a public repository with secret scanning
+   off reports a finding.
 
 To publish without the old history, first make a copy with one new commit:
 
@@ -140,9 +146,10 @@ repo-guard prepare-public --repo path/to/project/.worktrees/public-source --loca
 ```
 
 The source must be a clean, private GitHub repository. The copy contains only
-the current tracked files. Its commit uses your GitHub noreply email address.
-The original repository does not change. A local-only audit does not read
-GitHub, so run the full audit after you create and push the new repository.
+the current tracked files and the source's local Git excludes. Its commit uses
+your GitHub noreply email address. The original repository does not change.
+A local-only audit does not read GitHub, so run the full audit after you
+create and push the new repository.
 
 The [public-repo skill](skills/public-repo/SKILL.md) gives an agent these steps
 and the [release review criteria](skills/public-repo/references/release-review.md).
@@ -164,7 +171,8 @@ check. Network validation of credentials is off.
 - Hooks run only in clones where you ran `enable`. `git commit --no-verify`
   skips them. They do not check edits that you make on GitHub.
 - The `gh` wrapper does not check `gh api` requests, text that you type in the
-  `gh` editor, or release asset files.
+  `gh` editor, or release asset files. A visibility change on the GitHub
+  website does not use `publish`.
 - repo-guard supports only GitHub remotes.
 - The audit reads text. Images, archives, the wiki, discussions and Pages need
   a manual review. The report lists them.
