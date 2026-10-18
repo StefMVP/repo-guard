@@ -1,0 +1,21 @@
+version = 1
+
+# Exact, distinctive names that must not appear in a public repository.
+# A term also matches inside a longer name: "Northwind" matches "NorthwindCloud".
+private_terms = ["Northwind"]
+# A word does not match inside a longer lowercase word: "Falcon" matches
+# "FalconBot" and "falcon_api", but not "falconry". Use it for common words.
+private_words = ["Falcon"]
+private_domains = ["northwind.internal"]
+private_emails = ["owner@northwind.example"]
+
+# Links to other repositories of this GitHub owner need review.
+# A link to the current target repository is allowed.
+private_repo_owner = "example-owner"
+
+# Real home directories. Placeholders in documentation and the GitHub
+# runner homes /home/runner/ and C:\Users\runneradmin\ are allowed.
+personal_path_patterns = [
+  '''(?<![\w./\\])(?:file://)?/(?:home|Users)/(?!<|\$|YOUR_|your-|(?:example|user|runner)(?=[/\s"'<>]|$))[^/\s"'<>]+(?:/|(?=[\s"'<>]|$))''',
+  '(?i)(?:[a-z]:[\\/]|/mnt/[a-z]/)Users[\\/](?!<|\$|YOUR_|example[\\/]|user[\\/]|runner(?:admin)?[\\/])[^\\/\s"<>]+[\\/]',
+]

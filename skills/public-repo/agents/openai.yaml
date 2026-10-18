@@ -1,0 +1,4 @@
+interface:
+  display_name: "Public repository review"
+  short_description: "Audit and prepare a private repository for public release"
+  default_prompt: "Use $public-repo to review this repository before public release."
