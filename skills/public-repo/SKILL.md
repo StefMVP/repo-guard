@@ -101,12 +101,12 @@ For a review of an existing GitHub repository or the final release gate:
    findings before recording `ready`. After any code, ref, remote content or
    policy change, run a new audit and update the review.
    End preparation here and wait for the user's decision.
-5. When the user requests the actual visibility change for this repository, run
+5. After the ready review, ask the user to sign off on publication. Agreement to
+   a plan is not a sign-off. After an explicit sign-off for this repository, run
    `repo-guard publish --repo CHECKOUT --confirm OWNER/REPO`. The command repeats
    the audit and requires a matching ready review and pushed default branch.
    It then turns on GitHub secret scanning and push protection and confirms
    both. Without that confirmation, the repository becomes private again.
-   A request for a test case or readiness review does not request publication.
 6. After publication, make the clean checkout the working checkout. Move the
    old private checkout aside, then move the clean checkout to the original
    path, so hooks and links that use that path continue to work. Register the
