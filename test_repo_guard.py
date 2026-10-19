@@ -1,5 +1,7 @@
 """Exercise real Git hooks, the pinned scanner, and the release gate."""
+import contextlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -128,6 +130,22 @@ class GuardTest(unittest.TestCase):
     def test_quoted_placeholder_home_roots_are_allowed(self):
         for value in ("'" + HOME + "example'", '"' + HOME + 'user"', HOME + 'example/reports/'):
             self.assertEqual(guard.privacy(value, 'documentation'), [])
+
+    def test_candidate_profile_checks_names_in_a_repository_with_a_private_github_remote(self):
+        self.git('remote', 'add', 'origin', 'https://github.com/owner/project.git')
+        guard.enable(self.repo, 'candidate')
+        self.stage('sample.txt', 'Northwind\n')
+        self.assertEqual([item['rule'] for item in guard.check(self.repo, 'staged')], ['private-name'])
+
+    def test_enable_keeps_the_candidate_profile_unless_private_is_allowed(self):
+        guard.enable(self.repo, 'candidate')
+        with self.assertRaises(guard.GuardError):
+            guard.enable(self.repo, 'private')
+        self.assertEqual(self.git('config', 'repoGuard.profile'), 'candidate')
+        self.assertEqual(guard.main(['enable', '--repo', str(self.repo), '--profile', 'private']), 2)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(guard.main(['enable', '--repo', str(self.repo), '--profile', 'private', '--allow-private']), 0)
+        self.assertEqual(self.git('config', 'repoGuard.profile'), 'private')
 
     def test_private_profile_allows_brand_but_rejects_credentials(self):
         self.git('config', 'repoGuard.profile', 'private')
