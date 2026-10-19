@@ -449,11 +449,13 @@ def metadata_sources(findings, text):
 EVENTS = {'pre-commit': 'staged', 'commit-msg': 'message', 'pre-push': 'push'}
 
 
-def enable(repo, profile):
+def enable(repo, profile, allow_private=False):
     version = git(repo, '--version').decode()
     numbers = re.search(r'(\d+)\.(\d+)', version)
     if not numbers or tuple(map(int, numbers.groups())) < (2, 54):
         raise GuardError('Hook installation needs Git 2.54 or newer. Existing hooks were preserved.')
+    if profile == 'private' and public_profile(repo) and not allow_private:
+        raise GuardError('This checkout has the candidate profile. Add --allow-private to lower it to private.')
     git(repo, 'config', '--local', 'repoGuard.profile', profile)
     for event in EVENTS:
         key = 'hook.repo-guard-' + event
@@ -1090,6 +1092,8 @@ def main(argv=None):
         sub.add_argument('--repo', type=Path, default=Path.cwd())
         if name == 'enable':
             sub.add_argument('--profile', choices=('private', 'candidate'), default='candidate')
+            sub.add_argument('--allow-private', action='store_true',
+                             help='Lower a candidate checkout to the private profile')
         if name == 'check':
             sub.add_argument('--mode', choices=('staged', 'history'), default='staged')
         if name == 'hook':
@@ -1130,7 +1134,7 @@ def main(argv=None):
             return int(emit(findings))
         repo = repo_root(args.repo)
         if args.action == 'enable':
-            print(json.dumps(enable(repo, args.profile), indent=2))
+            print(json.dumps(enable(repo, args.profile, args.allow_private), indent=2))
         elif args.action == 'check':
             return int(emit(check(repo, args.mode)))
         elif args.action == 'hook':

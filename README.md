@@ -54,6 +54,12 @@ repo-guard enable --repo path/to/project --profile candidate
 | `candidate` | Credentials, private names, domains, emails, repository links, personal paths, sensitive file names and changed binary files. Use it for a public repository or for one that you will publish. |
 | `private` | Credentials and sensitive file names. Use it for a private repository that can contain its own private names. |
 
+The profile is stored in the repository Git config. A checkout with the
+`candidate` profile runs the full check in all hooks and in `status`, also
+while its GitHub repository is private. Use it for a private repository that
+you plan to publish. `enable --profile private` refuses to lower a `candidate`
+checkout. Add `--allow-private` to lower it.
+
 The hooks check the staged files before a commit, the commit message, and each
 outgoing commit before a push. A scan error also stops the operation. Existing
 hooks and hook managers continue to run. Run `enable` again in each new clone.
