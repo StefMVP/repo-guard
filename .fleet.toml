@@ -1,0 +1,16 @@
+[workspace]
+worktrees = ".worktrees"
+allocate = ["ws", "adopt", "{path}", "--slug", "{label}"]
+release = ["ws", "down", "{path}"]
+
+[checks]
+commands = [["python3", "-m", "unittest", "discover", "-p", "test_*.py"],
+            ["python3", "-m", "compileall", "-q", "repo_guard.py", "report_html.py"]]
+
+[offload.resources.scanner]
+scope = "caller"
+reason = "uses the installed pinned scanner and the caller's private test policy"
+
+[offload.tasks.checks]
+needs = ["scanner"]
+match = [["python3", "-m", "unittest"], ["python3", "-m", "compileall"]]
