@@ -221,6 +221,12 @@ def privacy(text, path, config=None):
         # Subdomains such as gist.github.com link no repository.
         patterns += [('private-repo-url', rf'(?:(?<![\w.-])|(?<=www\.))github\.com[:/]{owner}/[A-Za-z0-9_.-]+')]
     patterns += [('personal-path', item) for item in config['personal_path_patterns']]
+    # A checkout name plus a child path can expose private task and source names
+    # even when the policy has no matching brand name. Directory arguments alone
+    # are common in tool instructions. Keep explicit documentation placeholders.
+    patterns += [('worktree-path',
+                  r'(?<![\w.-])\.worktrees[\\/]+(?!(?:(?:example|sample|demo)(?:[-_][a-z0-9_.-]+)?'
+                  r'|feature(?:-[ab])?)[\\/])[a-z0-9][a-z0-9_.-]*[\\/]+[a-z0-9_.-]+')]
     seen = set()
     for name, pattern in patterns:
         for match in re.finditer(pattern, text, re.I):
@@ -1071,7 +1077,10 @@ def emit(findings, more='Use prepare-public for the full local audit.'):
     if len(findings) > 100:
         print(f'{len(findings) - 100} more findings. {more}')
     if not findings:
-        print('Repository checks passed.')
+        print('No findings from active credential and repository policy checks. '
+              'Review project-specific content before sharing.')
+    elif any(item['rule'] == 'worktree-path' for item in findings):
+        print('Use example-* checkout names in public examples. Keep local paths in settings outside Git.')
     return bool(findings)
 
 
