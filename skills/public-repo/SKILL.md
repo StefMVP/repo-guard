@@ -117,6 +117,10 @@ future work. Verify the active profile with `repo-guard status --repo CHECKOUT`.
 For a clean-history release, keep that checkout's author identity consistent
 with the approved initial commit.
 Normal Git commits and pushes run these checks without invoking this skill.
+Review the complete public diff for project-specific configuration and source
+paths. Keep local rules and values in configuration outside the public tree.
+Use clear placeholders in examples. After a privacy finding, review the whole
+change before retrying. A clean pattern scan still needs this content review.
 
 Review a new staged binary's visible content before using
 `repo-guard approve-binary FILE --repo CHECKOUT --note REASON`. The approval

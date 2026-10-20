@@ -16,6 +16,8 @@ personal-path: README.md:2
 ```
 
 Each line names the rule, file and line. The output never shows the matched value.
+These are credential and policy checks. A clean result still needs a review of
+project-specific content. Unknown private names can pass the configured policy.
 
 ## Requirements
 
@@ -51,7 +53,7 @@ repo-guard enable --repo path/to/project --profile candidate
 
 | Profile | Checks |
 | --- | --- |
-| `candidate` | Credentials, private names, domains, emails, repository links, personal paths, sensitive file names and changed binary files. Use it for a public repository or for one that you will publish. |
+| `candidate` | Credentials, private names, domains, emails, repository links, personal paths, worktree file paths, sensitive file names and changed binary files. Use it for a public repository or for one that you will publish. |
 | `private` | Credentials and sensitive file names. Use it for a private repository that can contain its own private names. |
 
 The profile is stored in the repository Git config. A checkout with the
@@ -63,6 +65,14 @@ checkout. Add `--allow-private` to lower it.
 The hooks check the staged files before a commit, the commit message, and each
 outgoing commit before a push. A scan error also stops the operation. Existing
 hooks and hook managers continue to run. Run `enable` again in each new clone.
+
+The `worktree-path` rule detects paths with a concrete checkout name and a child
+path under `.worktrees`, including Windows paths. It needs no private-name list.
+Use `example-*`, `sample-*`, `demo-*`, `<checkout>`, or variable placeholders in
+public examples. The short examples `feature`, `feature-a`, and `feature-b` are
+also allowed. A checkout directory argument alone is allowed. Keep real local
+paths and project-specific settings in configuration outside the public tree.
+After a privacy finding, review the complete change before you retry.
 
 To run the staged check yourself, use `repo-guard check --repo path/to/project`.
 Add `--mode history` to check all history.

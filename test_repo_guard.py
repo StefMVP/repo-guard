@@ -131,6 +131,71 @@ class GuardTest(unittest.TestCase):
         for value in ("'" + HOME + "example'", '"' + HOME + 'user"', HOME + 'example/reports/'):
             self.assertEqual(guard.privacy(value, 'documentation'), [])
 
+    def test_concrete_worktree_file_paths_need_no_private_name_policy(self):
+        prefix = '.worktrees' + '/'
+        config = {'personal_path_patterns': []}
+        for value in (prefix + 'release-queue/pr-42/ui/index.html',
+                      '../project/' + prefix + 'replay-task/control/panel.html',
+                      'file:///tmp/project/' + prefix + 'checkout/report.html',
+                      r'C:\project\.worktrees' + r'\release-task\ui\index.html',
+                      r'.worktrees' + r'\\release-task\\ui\\index.html'):
+            with self.subTest(value=value):
+                findings = guard.privacy('First line\n' + value, 'sample', config)
+                self.assertEqual(findings, [guard.finding('worktree-path', 'sample', 2)])
+                self.assertNotIn(value, json.dumps(findings))
+
+    def test_worktree_placeholders_and_directory_arguments_are_allowed(self):
+        prefix = '.worktrees' + '/'
+        for value in (prefix + 'example-task/ui/index.html',
+                      prefix + 'sample-project/report.html',
+                      prefix + 'demo/ui/index.html',
+                      prefix + 'feature/report.html',
+                      prefix + 'feature-a/ui/index.html',
+                      prefix + '<checkout>/ui/index.html',
+                      prefix + '${CHECKOUT}/ui/index.html',
+                      prefix + '{checkout}/ui/index.html',
+                      prefix + '*/ui/index.html',
+                      prefix + 'public-source', '.worktrees/',
+                      '.worktrees-backup/release-task/ui/index.html',
+                      'other.worktrees/release-task/ui/index.html'):
+            with self.subTest(value=value):
+                self.assertEqual(guard.privacy(value, 'documentation'), [])
+        for name in ('examplecorp', 'samplecustomer', 'democlient', 'feature-payment'):
+            with self.subTest(name=name):
+                self.assertIn('worktree-path', {item['rule'] for item in
+                              guard.privacy(prefix + name + '/ui/index.html', 'sample')})
+
+    def test_worktree_path_hooks_block_renamed_labels_and_outgoing_deleted_paths(self):
+        if tuple(map(int, self.git('--version').split()[2].split('.')[:2])) < (2, 54):
+            self.skipTest('Hook installation requires Git 2.54+.')
+        concrete = '.worktrees' + '/release-task/ui/index.html'
+        self.stage('README.md', 'Application preview: ' + concrete + '\n')
+        guard.enable(self.repo, 'candidate')
+        self.git('commit', '-qm', 'Add preview', expected=1)
+        self.assertIn('worktree-path', {item['rule'] for item in guard.hook(
+            self.repo, 'pre-commit', [], b'')})
+        message = self.root / 'message'
+        message.write_text('Preview at ' + concrete)
+        self.assertIn('worktree-path', {item['rule'] for item in guard.hook(
+            self.repo, 'commit-msg', [str(message)], b'')})
+        # Import an unguarded history, then check it at the push boundary.
+        self.git('config', '--remove-section', 'hook.repo-guard-pre-commit')
+        self.git('commit', '-qm', 'Add preview')
+        self.stage('README.md', 'Application preview\n')
+        self.git('commit', '-qm', 'Remove local path')
+        local = self.git('rev-parse', 'HEAD')
+        updates = f'refs/heads/main {local} refs/heads/main {"0" * 40}\n'
+        findings = guard.hook(self.repo, 'pre-push', ['origin', 'example'], updates.encode())
+        self.assertIn('worktree-path', {item['rule'] for item in findings})
+        self.assertNotIn(concrete, json.dumps(findings))
+
+    def test_success_output_states_the_scan_scope(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertFalse(guard.emit([]))
+        self.assertIn('active credential and repository policy checks', output.getvalue())
+        self.assertIn('Review project-specific content', output.getvalue())
+
     def test_candidate_profile_checks_names_in_a_repository_with_a_private_github_remote(self):
         self.git('remote', 'add', 'origin', 'https://github.com/owner/project.git')
         guard.enable(self.repo, 'candidate')
