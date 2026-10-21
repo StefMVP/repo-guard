@@ -1,7 +1,5 @@
 [workspace]
 worktrees = ".worktrees"
-allocate = ["ws", "adopt", "{path}", "--slug", "{label}"]
-release = ["ws", "down", "{path}"]
 
 [checks]
 commands = [["python3", "-m", "unittest", "discover", "-p", "test_*.py"],
