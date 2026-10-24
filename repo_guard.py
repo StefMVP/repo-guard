@@ -853,9 +853,10 @@ def review(repo, decision, report_path):
 def approve_finding(repo, fingerprint, note):
     state = state_dir(repo)
     audit = load(state / 'audit.json', {})
-    item = next((item for item in audit.get('findings', []) if item.get('fingerprint') == fingerprint), None)
+    findings = check(repo, 'staged') + audit.get('findings', [])
+    item = next((item for item in findings if item.get('fingerprint') == fingerprint), None)
     if not item or not note.strip():
-        raise GuardError('Select a scanner fingerprint from the current audit and give the review reason.')
+        raise GuardError('Select a scanner fingerprint from check --json or the current audit and give the review reason.')
     records = load(state / 'scanner-exceptions.json', {})
     records[fingerprint] = {'rule': item['rule'], 'path': item['path'], 'note': note}
     save(state / 'scanner-exceptions.json', records)
@@ -1105,6 +1106,7 @@ def main(argv=None):
                              help='Lower a candidate checkout to the private profile')
         if name == 'check':
             sub.add_argument('--mode', choices=('staged', 'history'), default='staged')
+            sub.add_argument('--json', action='store_true', help='Print redacted findings and their exact fingerprints')
         if name == 'hook':
             sub.add_argument('event', choices=tuple(EVENTS))
             sub.add_argument('arguments', nargs='*')
@@ -1145,7 +1147,11 @@ def main(argv=None):
         if args.action == 'enable':
             print(json.dumps(enable(repo, args.profile, args.allow_private), indent=2))
         elif args.action == 'check':
-            return int(emit(check(repo, args.mode)))
+            findings = check(repo, args.mode)
+            if args.json:
+                print(json.dumps(findings, indent=2))
+                return int(bool(findings))
+            return int(emit(findings))
         elif args.action == 'hook':
             data = sys.stdin.buffer.read() if args.event == 'pre-push' else b''
             return int(emit(hook(repo, args.event, args.arguments, data)))

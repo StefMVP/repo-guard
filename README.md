@@ -80,13 +80,16 @@ Add `--mode history` to check all history.
 A finding can be an intentional test value or a reviewed image:
 
 ```sh
+repo-guard check --repo . --json
 repo-guard approve-finding --repo . --fingerprint HASH --note 'Fake token in a test'
 repo-guard approve-binary docs/screen.png --repo . --note 'Sample data only'
 ```
 
-Take `HASH` from the audit file that `prepare-public` names. An approval applies
-only to that exact value or file content. You cannot approve private names or
-personal paths. Change the content instead.
+Take `HASH` from `check --json` or the audit file that `prepare-public` names.
+Staged findings need no public-release audit. JSON output contains the rule, source,
+and fingerprint; it does not contain the matched value. An approval applies only to
+that exact value and source. You cannot approve private names or personal paths.
+Change that content instead.
 
 ## Check text before GitHub posts it
 
