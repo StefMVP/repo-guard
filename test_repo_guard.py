@@ -318,14 +318,33 @@ class GuardTest(unittest.TestCase):
         token = FAKE_TOKEN
         self.stage('sample.txt', 'API_TOKEN=' + token + '\n')
         match = next(item for item in guard.check(self.repo, 'staged') if item['rule'] == 'github-pat')
-        state = guard.state_dir(self.repo)
-        guard.save(state / 'audit.json', {'findings': [match]})
         guard.approve_finding(self.repo, match['fingerprint'], 'Deliberate non-live test value')
+        self.assertFalse((guard.state_dir(self.repo) / 'audit.json').exists())
         self.assertEqual(guard.check(self.repo, 'staged'), [])
         self.stage('sample.txt', 'API_TOKEN=' + token[:-1] + 'B\n')
         self.assertIn('github-pat', {item['rule'] for item in guard.check(self.repo, 'staged')})
         self.stage('other.txt', 'API_TOKEN=' + token + '\n')
         self.assertTrue(any(item['path'] == 'other.txt' for item in guard.check(self.repo, 'staged')))
+
+    def test_check_json_exposes_only_redacted_finding_identity(self):
+        self.stage('sample.txt', 'API_TOKEN=' + FAKE_TOKEN + '\n')
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = guard.main(['check', '--repo', str(self.repo), '--json'])
+        self.assertEqual(code, 1)
+        self.assertNotIn(FAKE_TOKEN, output.getvalue())
+        finding = next(item for item in json.loads(output.getvalue()) if item['rule'] == 'github-pat')
+        self.assertEqual(finding['path'], 'sample.txt')
+        self.assertRegex(finding['fingerprint'], r'^[0-9a-f]{64}$')
+
+    def test_staged_exception_requires_a_current_finding_and_reason(self):
+        self.stage('sample.txt', 'API_TOKEN=' + FAKE_TOKEN + '\n')
+        match = next(item for item in guard.check(self.repo, 'staged') if item['rule'] == 'github-pat')
+        for fingerprint, note in [('0' * 64, 'Unknown value'), (match['fingerprint'], '  ')]:
+            with self.subTest(fingerprint=fingerprint):
+                with self.assertRaises(guard.GuardError):
+                    guard.approve_finding(self.repo, fingerprint, note)
+        self.assertIn('github-pat', {item['rule'] for item in guard.check(self.repo, 'staged')})
 
     def test_changed_github_content_invalidates_snapshot(self):
         first = guard.snapshot(self.repo, {'description': 'Original'})
