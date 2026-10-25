@@ -658,11 +658,11 @@ def archive_text(data):
 
 MANUAL_SURFACES = ['Repository architecture and configuration',
                    'Configuration and portability: hardcoded identities, paths, hosts, tools and tunable numbers',
-                   'README clarity, setup, usage, links and writing',
+                   'README: concise user tasks; no audit narration or development checklist',
                    'GitHub description, relevant topics and optional website',
                    'Useful screenshots or example output with public sample data',
                    'License and contribution rights',
-                   'Documented local checks, installation and package contents',
+                   'Local check evidence, installation and package contents',
                    'Images and historical media', 'Wiki, discussions, attachments, and Pages']
 
 # Values that a new user can need to change. The list is a review aid, not a
