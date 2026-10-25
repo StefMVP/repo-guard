@@ -65,6 +65,11 @@ existing exact-content approval when the image passes review.
 
 ## Installation, packages and local checks
 
+Keep GitHub Actions disabled on new repositories unless the user asks for them.
+Disable Actions before the first push. Use local checks for proof. Do not add
+automatic workflow triggers. Record Actions status in the review; disabled
+Actions do not require a replacement paid service.
+
 - Run the documented core flow. Verify the install and first-use commands in a
   clean temporary environment when they change or have not been checked.
 - For a distributed package, inspect the built artifact's file list. Confirm
@@ -117,7 +122,11 @@ message or a fallback. It must not stop an unrelated command.
 ## Architecture and evidence
 
 Review configuration, file and network access, state ownership, error handling
-and installation boundaries. Prefer a small fix or deletion when it solves the
+and installation boundaries. Review comments after the code. Remove comments
+that repeat the code. First use clear names, types, lint, architecture or a
+meaningful test. Do not add tests that only mirror implementation details to
+justify a comment. Keep a comment only for a reason those methods cannot
+express. Prefer a small fix or deletion when it solves the
 problem. For a proposed deletion, state which behavior it removes. Keep an
 architecture description in the private HTML report only as detailed as the
 project needs.
