@@ -715,7 +715,7 @@ class GuardTest(unittest.TestCase):
             self.assertEqual(guard.main(['check-text', str(sample), '--profile', 'private']), 1)
         self.assertNotIn(FAKE_TOKEN, output.getvalue())
 
-    def gh(self, *args, private=True, cwd=None, data=b'', environment=None, gist=''):
+    def gh(self, *args, private=True, cwd=None, data=b'', environment=None, gist='', created='posted'):
         """Run the gh wrapper in front of a fake gh that records each call."""
         log = self.root / 'gh-calls.jsonl'
         fake = self.root / 'fake-gh'
@@ -724,7 +724,7 @@ class GuardTest(unittest.TestCase):
                         'data = sys.stdin.read()\n'
                         f'with open({str(log)!r}, "a") as target:\n'
                         '    target.write(json.dumps({"args": sys.argv[1:], "stdin": data}) + "\\n")\n'
-                        f'answers = {{"api": {answer!r}, "gist view": {gist!r}}}\n'
+                        f'answers = {{"api": {answer!r}, "gist view": {gist!r}, "gist create": {created!r}}}\n'
                         'print(answers.get(" ".join(sys.argv[1:3]), answers.get(sys.argv[1], "posted")))\n')
         fake.chmod(0o755)
         env = dict(os.environ, REPO_GUARD_GH=str(fake), **(environment or {}))
@@ -777,6 +777,48 @@ class GuardTest(unittest.TestCase):
         self.assertEqual(calls, [])
         proof.write_text('API_TOKEN=' + FAKE_TOKEN + '\n')
         result, calls = self.gh('gist', 'create', str(proof))
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(calls, [])
+
+    def test_gh_wrapper_pushes_binary_gist_files_with_git(self):
+        # The gist API refuses binary files; the wrapper pushes them to the gist's Git repository.
+        gist_id = 'c' * 32
+        remote = self.root / 'gists' / f'{gist_id}.git'
+        subprocess.run(['git', 'init', '-q', '--bare', str(remote)], check=True)
+        seed = self.root / 'seed'
+        subprocess.run(['git', 'clone', '-q', str(remote), str(seed)], check=True, capture_output=True)
+        (seed / 'README.md').write_text('shot.png\n')
+        for command in (['add', '.'], ['-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'Create'],
+                        ['push', '-q', 'origin', 'HEAD']):
+            subprocess.run(['git', *command], cwd=seed, check=True)
+        image = self.root / 'shot.png'
+        image.write_bytes(b'\x89PNG\r\n\x1a\n\0\0\0\rIHDR\xff\xfe')
+        url = f'https://gist.github.com/{gist_id}'
+        redirect = {'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': f'url.file://{self.root}/gists/.insteadOf',
+                    'GIT_CONFIG_VALUE_0': 'https://gist.github.com/'}
+        result, calls = self.gh('gist', 'create', '-d', 'Proof', str(image), created=url, environment=redirect)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.decode().strip(), url)
+        # The API gets a text file only; the image arrives by Git.
+        args = calls[-1]['args']
+        self.assertEqual(args[:4], ['gist', 'create', '-d', 'Proof'])
+        self.assertNotIn(str(image), args)
+        self.assertTrue(args[-1].endswith('README.md'))
+        stored = subprocess.run(['git', '--git-dir', str(remote), 'show', 'HEAD:shot.png'], capture_output=True)
+        self.assertEqual(stored.stdout, image.read_bytes())
+        # Text files go to the API with the binary file removed from the command.
+        notes = self.root / 'notes.md'
+        notes.write_text('Screenshot notes\n')
+        second = self.root / 'wide.png'
+        second.write_bytes(image.read_bytes() + b'\x01')
+        result, calls = self.gh('gist', 'create', str(notes), str(second), '--public', created=url, environment=redirect)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls[-1]['args'], ['gist', 'create', str(notes), '--public'])
+        stored = subprocess.run(['git', '--git-dir', str(remote), 'show', 'HEAD:wide.png'], capture_output=True)
+        self.assertEqual(stored.stdout, second.read_bytes())
+        # A failed check stops the upload before gh runs.
+        notes.write_text('API_TOKEN=' + FAKE_TOKEN + '\n')
+        result, calls = self.gh('gist', 'create', str(notes), str(image), created=url, environment=redirect)
         self.assertEqual(result.returncode, 1)
         self.assertEqual(calls, [])
 
