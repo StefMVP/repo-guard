@@ -939,7 +939,7 @@ def gh_posts(argv):
     if flags is None:
         return None
     flags = {**flags, '-R': 'repo', '--repo': 'repo'}
-    target, texts, files = os.environ.get('GH_REPO'), [], []
+    target, texts, files, positional = os.environ.get('GH_REPO'), [], [], []
     rest = argv[2:]
     index = 0
     while index < len(rest):
@@ -961,6 +961,7 @@ def gh_posts(argv):
             files.append(value)
         elif command == 'gist create' and not item.startswith('-'):
             files.append(item)
+            positional.append(index + 2)
         elif command in ('repo create', 'repo edit', 'gist edit') and not item.startswith('-') and target is None:
             target = item
         index += 1
@@ -970,7 +971,66 @@ def gh_posts(argv):
         visibility = 'private' if {'--private', '--internal'} & set(rest) else 'public'
     elif command == 'gist create':
         visibility = 'public' if {'-p', '--public'} & set(rest) else 'private'
-    return {'gist': argv[0] == 'gist', 'target': target, 'texts': texts, 'files': files, 'visibility': visibility}
+    return {'gist': argv[0] == 'gist', 'target': target, 'texts': texts, 'files': files, 'visibility': visibility,
+            'positional': positional if command == 'gist create' else []}
+
+
+def is_binary(data):
+    """Return True for content that the gist API refuses as binary."""
+    if b'\0' in data[:8192]:
+        return True
+    try:
+        data.decode()
+    except UnicodeDecodeError:
+        return True
+    return False
+
+
+def gist_with_binaries(gh, argv, positional, binaries, stdin, env):
+    """Create a gist from the text files, then push the binary files to its Git URL.
+
+    The gist API takes only text. A gist is also a Git repository, and Git takes any file.
+    """
+    names = [Path(argv[index]).name for index in binaries]
+    texts = [argv[index] for index in positional if index not in binaries]
+    if len(set(names)) != len(names) or set(names) & {Path(item).name for item in texts}:
+        raise GuardError('Two gist files have the same name.')
+    command = [item for index, item in enumerate(argv) if index not in binaries]
+    workspace = Path(tempfile.mkdtemp(prefix='repo-guard-gist-'))
+    try:
+        if not texts:
+            # The API needs one text file to create the gist.
+            readme = workspace / 'README.md'
+            readme.write_text(' '.join(names) + '\n')
+            command.append(str(readme))
+        created = subprocess.run([gh, *command], input=stdin, env=env, stdout=subprocess.PIPE)
+        if created.returncode:
+            return created.returncode
+        url = (created.stdout.decode().split() or [''])[-1]
+        gist = url.rstrip('/').rsplit('/', 1)[-1]
+        if not re.fullmatch(r'[0-9a-f]{20,}', gist):
+            raise GuardError('gh printed no gist URL.')
+        checkout = workspace / 'gist'
+        # gh gives Git its own authentication.
+        helper = ['-c', 'credential.helper=', '-c', f'credential.helper=!{shlex.quote(gh)} auth git-credential']
+        git_env = dict(env, GIT_TERMINAL_PROMPT='0')
+        try:
+            run(['git', *helper, 'clone', '-q', f'https://gist.github.com/{gist}.git', checkout], env=git_env)
+            for index, name in zip(binaries, names):
+                shutil.copyfile(argv[index], checkout / name)
+            identity = []
+            if not run(['git', 'config', 'user.email'], checkout, allowed=(0, 1)).stdout.strip():
+                identity = ['-c', 'user.name=gist', '-c', 'user.email=gist@users.noreply.github.com']
+            run(['git', 'add', '--', *names], checkout)
+            run(['git', *identity, 'commit', '-q', '-m', 'Add binary files'], checkout)
+            run(['git', *helper, 'push', '-q', 'origin', 'HEAD'], checkout, env=git_env)
+        except (GuardError, OSError):
+            print(f'repo-guard: {url} has the text files, but not the binary files.', file=sys.stderr)
+            raise
+        sys.stdout.write(created.stdout.decode())
+        return 0
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
 
 
 def linked_gists(contents, gh):
@@ -1067,6 +1127,14 @@ def gh_wrapper(argv):
         emit(findings)
         print('repo-guard: gh did not post the text. Remove the findings and run the command again.', file=sys.stderr)
         return 1
+    binaries = [index for index in post['positional'] if index < len(argv) and argv[index] != '-'
+                and Path(argv[index]).is_file() and is_binary(Path(argv[index]).read_bytes())]
+    if binaries:
+        try:
+            return gist_with_binaries(gh, argv, post['positional'], binaries, stdin, env)
+        except (GuardError, OSError) as error:
+            print(f'repo-guard: {error}', file=sys.stderr)
+            return 2
     if stdin is None:
         os.execve(gh, [gh, *argv], env)
     return subprocess.run([gh, *argv], input=stdin, env=env).returncode

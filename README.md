@@ -114,6 +114,10 @@ who get its link can read it. When a post links a gist, the wrapper also reads
 the gist and gives it the same check as the post. A finding or a failed check
 stops the post.
 
+`gist create` also takes binary files, such as screenshots. The wrapper creates
+the gist with the text files, then pushes the binary files to the gist's Git
+repository with the `gh` credentials.
+
 To check text yourself, use `repo-guard check-text notes.md`. Use `-` to read
 standard input. Add `--profile private` to check only for credentials, and
 `--linked-gists` to also check the gists that the text links.
