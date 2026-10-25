@@ -55,7 +55,8 @@ def render(audit, review=None, decision=None):
     if not local_only and 'description' in audit['github']:
         fields = [('Description', audit['github'].get('description') or 'Missing description'),
                   ('Topics', ', '.join(audit['github'].get('topics') or []) or 'No topics'),
-                  ('Website', audit['github'].get('homepage') or 'Not set (optional)')]
+                  ('Website', audit['github'].get('homepage') or 'Not set (optional)'),
+                  ('GitHub Actions', {True: 'Enabled', False: 'Disabled', None: 'Not checked'}[audit['github'].get('actions_enabled')])]
         metadata_rows = ''.join('<tr><th scope="row">' + label + '</th><td>' +
                                 escape(value) + '</td></tr>' for label, value in fields)
         metadata = ('<details><summary>GitHub metadata</summary><table>' + metadata_rows +

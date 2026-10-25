@@ -419,6 +419,8 @@ class GuardTest(unittest.TestCase):
              'temp_clone_token': 'temporary-read-token-b'},
         ])
         def read_surface(repo, endpoint, pages=False):
+            if endpoint.endswith('/actions/permissions'):
+                return {'enabled': False}
             return next(repositories) if endpoint == 'repos/owner/project' else [[]]
         with patch.object(guard, 'github_name', return_value='owner/project'), \
              patch.object(guard, 'gh_json', side_effect=read_surface):
@@ -427,11 +429,16 @@ class GuardTest(unittest.TestCase):
         self.assertNotIn('temp_clone_token', first['repository'])
         self.assertNotIn('temporary-read-token', guard.surface_text(first))
         self.assertEqual(guard.snapshot(self.repo, first), guard.snapshot(self.repo, second))
+        second['actions_permissions']['enabled'] = True
+        self.assertNotEqual(guard.snapshot(self.repo, first), guard.snapshot(self.repo, second))
+        second['actions_permissions']['enabled'] = False
         second['repository']['description'] = 'Changed public description'
         self.assertNotEqual(guard.snapshot(self.repo, first), guard.snapshot(self.repo, second))
 
     def test_github_audit_reads_review_summaries_and_commit_comments(self):
         def read(repo, endpoint, pages=False):
+            if endpoint.endswith('/actions/permissions'):
+                return {'enabled': False}
             if endpoint == 'repos/owner/project':
                 return {'full_name': 'owner/project', 'private': True}
             if endpoint.startswith('repos/owner/project/issues?'):
@@ -587,8 +594,9 @@ class GuardTest(unittest.TestCase):
         metadata = {'description': '<script>example</script>',
                     'homepage': 'https://example.invalid/?a=1&b=2',
                     'topics': ['html', 'report-viewer']}
-        audit['github'].update(metadata)
+        audit['github'].update(metadata, actions_enabled=False)
         text = Path(guard.write_report(self.repo, audit)).read_text()
+        self.assertIn('<th scope="row">GitHub Actions</th><td>Disabled</td>', text)
         self.assertIn('&lt;script&gt;example&lt;/script&gt;', text)
         self.assertNotIn('<script>', text)
         self.assertIn('https://example.invalid/?a=1&amp;b=2', text)

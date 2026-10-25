@@ -604,6 +604,9 @@ def github_surface(repo):
     result = {'repository': gh_json(repo, 'repos/' + name), 'resources': {}}
     # This request-scoped credential is neither public content nor stable metadata.
     result['repository'].pop('temp_clone_token', None)
+    result['actions_permissions'] = gh_json(repo, f'repos/{name}/actions/permissions')
+    if not isinstance(result['actions_permissions'], dict) or type(result['actions_permissions'].get('enabled')) is not bool:
+        raise GuardError('Cannot read GitHub Actions status.')
     for resource in ('issues?state=all', 'issues/comments', 'pulls/comments', 'comments', 'releases',
                      'actions/runs', 'actions/artifacts'):
         separator = '&' if '?' in resource else '?'
@@ -662,7 +665,7 @@ MANUAL_SURFACES = ['Architecture, configuration and comments: prefer code, lint 
                    'GitHub description, relevant topics and optional website',
                    'Useful screenshots or example output with public sample data',
                    'License and contribution rights',
-                   'Local check evidence, installation and package contents',
+                   'Local check evidence, installation and package contents; Actions may stay disabled',
                    'Images and historical media', 'Wiki, discussions, attachments, and Pages']
 
 # Values that a new user can need to change. The list is a review aid, not a
@@ -811,7 +814,8 @@ def prepare(repo, local_only=False, target=None):
               'github': {'full_name': name, 'private': surface['repository']['private'],
                          'description': surface['repository'].get('description'),
                          'homepage': surface['repository'].get('homepage'),
-                         'topics': surface['repository'].get('topics')},
+                         'topics': surface['repository'].get('topics'),
+                         'actions_enabled': surface.get('actions_permissions', {}).get('enabled')},
               'scope': 'local' if local_only else 'full',
               'findings': output, 'media_to_review': binary_paths,
               'configuration': configuration(repo),

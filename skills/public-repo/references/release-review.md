@@ -65,6 +65,11 @@ existing exact-content approval when the image passes review.
 
 ## Installation, packages and local checks
 
+Keep GitHub Actions disabled on new repositories unless the user asks for them.
+Disable Actions before the first push. Use local checks for proof. Do not add
+automatic workflow triggers. Record Actions status in the review; disabled
+Actions do not require a replacement paid service.
+
 - Run the documented core flow. Verify the install and first-use commands in a
   clean temporary environment when they change or have not been checked.
 - For a distributed package, inspect the built artifact's file list. Confirm
