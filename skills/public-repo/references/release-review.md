@@ -117,7 +117,11 @@ message or a fallback. It must not stop an unrelated command.
 ## Architecture and evidence
 
 Review configuration, file and network access, state ownership, error handling
-and installation boundaries. Prefer a small fix or deletion when it solves the
+and installation boundaries. Review comments after the code. Remove comments
+that repeat the code. First use clear names, types, lint, architecture or a
+meaningful test. Do not add tests that only mirror implementation details to
+justify a comment. Keep a comment only for a reason those methods cannot
+express. Prefer a small fix or deletion when it solves the
 problem. For a proposed deletion, state which behavior it removes. Keep an
 architecture description in the private HTML report only as detailed as the
 project needs.

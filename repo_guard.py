@@ -656,7 +656,7 @@ def archive_text(data):
     return b'\n'.join(result)
 
 
-MANUAL_SURFACES = ['Repository architecture and configuration',
+MANUAL_SURFACES = ['Architecture, configuration and comments: prefer code, lint and real tests',
                    'Configuration and portability: hardcoded identities, paths, hosts, tools and tunable numbers',
                    'README: concise user tasks; no audit narration or development checklist',
                    'GitHub description, relevant topics and optional website',
