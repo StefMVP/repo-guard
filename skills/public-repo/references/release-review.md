@@ -6,32 +6,27 @@ confirmed bugs, inspection findings and optional improvements.
 
 ## README
 
-Write the README in ASD-STE100 Simplified Technical English. It tells a reader
-what the project does, how to set it up and how to use it. Keep review findings
-and proposed changes in the private HTML report. Keep wording that the user
-selected.
+Apply the user's global writing instructions. Use ASD-STE100 Simplified
+Technical English. Keep the README short: purpose, installation, configuration
+and use. Add a limit only when it changes a user's setup or action.
 
-- Start with one sentence that says what the project does. Then state what it
-  does, what it does not do, and its limits.
-- Name each section after a task of the reader, for example "Setup", "Saved
-  files" or "Export each day".
-- State the platforms, tools and accounts before the commands that need them.
-  Give the shortest tested path from installation to a useful result. Use
-  public sample values and portable paths.
-- After a command block, say what the commands do and where the output goes.
-- Use sentences and command blocks. Add a table, a tree or an image only when
-  text cannot show the same data clearly.
-- Put the full option list in the CLI help. End with the help command and the
-  check command.
-- Put design reasons, history and measurements in other documents, and only
-  when the user asks for them.
-- Use short sentences, active voice, simple words and one term for one thing.
-  Remove claims, repetition and filler. Keep exact command names and API
-  identifiers.
-- Check links, file paths and image references. Make sure that the license
-  link agrees with the license that the user selected.
-
-A larger project can have more sections. Each section describes one task.
+- Start with what the project does. Give the shortest path to a useful result.
+- State dependencies before the commands that need them. Use portable paths.
+- Explain a command's output only when it is not clear from the command.
+- Keep the full option list in CLI help. Keep code checks in the project's
+  existing scripts and package configuration.
+- Do not add Check changes, Testing, Validation, release checklists or similar
+  README sections as an audit requirement. Add contributor instructions only
+  when the user asks for them. Run checks and put proof in the private review.
+- Remove process narration, screenshot-production captions, implementation
+  notes, audit status, disclaimers and provenance that do not help the reader
+  use the project. A product image does not need a paragraph about its capture.
+- Keep useful image alt text. Add a caption only to explain a visible control
+  or state that the image and nearby text do not explain.
+- For each sentence, name the user's task it supports. Delete it if removing
+  it changes no instruction, required constraint or user decision.
+- Check commands, links, image paths and the selected license. Keep the user's
+  chosen wording unless they ask to change it.
 
 ## GitHub metadata
 
@@ -60,9 +55,9 @@ terminal output can be sufficient.
 
 Capture the current core flow with populated public sample data. Inspect the
 saved image for private paths, names, accounts, browser tabs and credentials.
-Use report names, paths and content that show the real use. A fictional UI
-example should contain useful data and a clear mockup or result. Label fictional
-test results. Keep a repeatable capture command with the fixtures.
+Use representative sample data. Do not present invented outcomes as measured
+results. Keep capture commands, fixture details and screenshot provenance in
+the private review. Do not add these details as product-image captions.
 Show the useful app area at a readable size. Give the image meaningful alt text.
 Keep a repository image in a tracked documentation path and confirm that it
 renders on GitHub. Check rights for any included third-party media. Use the
@@ -76,8 +71,8 @@ existing exact-content approval when the image passes review.
   that it includes the documented entry points and required assets. Check for
   unintended files. Install and start the artifact, not just the source checkout.
 - Use the project's existing test, type, lint and format checks as applicable.
-  Give contributors one clear local check command when that helps. Test observed
-  bugs and their edge cases: reproduce the bug in a test, fix it, then show the
+  Use the existing check command; a new README check section is not required.
+  Test observed bugs and their edge cases: reproduce the bug in a test, fix it, then show the
   test passes.
 - Keep publication and deployment separate from local checks. Full-history
   scans and this review belong to release preparation.
