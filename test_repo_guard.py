@@ -733,6 +733,7 @@ class GuardTest(unittest.TestCase):
                         f'with open({str(log)!r}, "a") as target:\n'
                         '    target.write(json.dumps({"args": sys.argv[1:], "stdin": data}) + "\\n")\n'
                         f'answers = {{"api": {answer!r}, "gist view": {gist!r}, "gist create": {created!r}}}\n'
+                        'if sys.argv[1:3] == ["gist", "view"] and "\\x1b" in answers["gist view"] and "--allow-escape-sequences" not in sys.argv: sys.exit(1)\n'
                         'print(answers.get(" ".join(sys.argv[1:3]), answers.get(sys.argv[1], "posted")))\n')
         fake.chmod(0o755)
         env = dict(os.environ, REPO_GUARD_GH=str(fake), **(environment or {}))
@@ -830,13 +831,25 @@ class GuardTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(calls, [])
 
+    def test_linked_gist_escape_bytes_are_captured_and_scanned(self):
+        body = 'Proof: https://gist.githubusercontent.com/someone/' + 'a' * 32 + '/raw/run.log'
+        result, calls = self.gh('pr', 'create', '-R', 'example-owner/internal', '--title', 'Fix', '--body', body,
+                                gist='\x1b[31mProof output\x1b[0m\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn(b'\x1b', result.stdout)
+        result, calls = self.gh('pr', 'create', '-R', 'example-owner/internal', '--title', 'Fix', '--body', body,
+                                gist='\x1b[31mAPI_TOKEN=' + FAKE_TOKEN + '\x1b[0m\n')
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(b'github-pat', result.stdout)
+        self.assertFalse(any(call['args'][:2] == ['pr', 'create'] for call in calls))
+
     def test_gh_wrapper_checks_a_linked_gist_with_the_post(self):
         body = 'Proof: https://gist.githubusercontent.com/someone/' + 'a' * 32 + '/raw/run.log'
         result, calls = self.gh('pr', 'create', '-R', 'example-owner/public', '--title', 'Fix', '--body', body,
                                 private=False, gist='Run on ' + HOME + 'realperson/project\n')
         self.assertEqual(result.returncode, 1)
         self.assertIn(b'personal-path: gist ' + b'a' * 32, result.stdout)
-        self.assertIn(['gist', 'view', 'a' * 32, '--raw'], [call['args'] for call in calls])
+        self.assertIn(['gist', 'view', 'a' * 32, '--raw', '--allow-escape-sequences'], [call['args'] for call in calls])
         self.assertFalse(any(call['args'][:2] == ['pr', 'create'] for call in calls))
         result, calls = self.gh('pr', 'create', '-R', 'example-owner/internal', '--title', 'Fix', '--body', body,
                                 gist='Run on ' + HOME + 'realperson/project\n')
