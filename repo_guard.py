@@ -1042,7 +1042,7 @@ def linked_gists(contents, gh):
     output = []
     pattern = rb'gist\.github(?:usercontent)?\.com/[\w-]+/([0-9a-f]{20,})'
     for gist in dict.fromkeys(match.decode() for _, data in contents for match in re.findall(pattern, data)):
-        output.append((f'gist {gist}', run([gh, 'gist', 'view', gist, '--raw']).stdout))
+        output.append((f'gist {gist}', run([gh, 'gist', 'view', gist, '--raw', '--allow-escape-sequences']).stdout))
     return output
 
 
