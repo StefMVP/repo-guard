@@ -32,7 +32,9 @@ class GuardTest(unittest.TestCase):
         # Tests use the fictional example policy, not the user's policy.
         config = self.root / 'config'
         shutil.copytree(HERE / 'examples', config)
+        scanner = str(guard.binary())
         self.env = dict(os.environ, HOME=str(self.root / 'home'),
+                        REPO_GUARD_BINARY=scanner,
                         REPO_GUARD_STATE=str(self.root / 'state'), REPO_GUARD_CONFIG=str(config),
                         GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_SYSTEM='/dev/null')
         self.environment = patch.dict(os.environ, self.env, clear=True)
