@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """Check the text that gh posts to GitHub, then run the real gh."""
+import os
 import sys
 from pathlib import Path
+
+actions_guard = Path.home() / 'Work/agent_config/shims/gh'
+if os.environ.get('ACTIONS_POLICY_CHECKED') != '1' and os.access(actions_guard, os.X_OK):
+    os.execv(str(actions_guard), [str(actions_guard), *sys.argv[1:]])
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from repo_guard import gh_wrapper

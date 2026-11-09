@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -1078,6 +1079,55 @@ class GuardTest(unittest.TestCase):
             with self.assertRaises(guard.GuardError):
                 guard.clean_history(self.repo, self.root / 'unused', 'owner/project')
         self.assertFalse((self.root / 'unused').exists())
+
+
+class GhShimTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.checkout = self.root / 'sample-repo'
+        (self.checkout / 'shims').mkdir(parents=True)
+        self.shim = self.checkout / 'shims/gh'
+        shutil.copy2(HERE / 'shims/gh', self.shim)
+        (self.checkout / 'repo_guard.py').write_text(
+            'import json, sys\n'
+            'def gh_wrapper(argv):\n'
+            '    print(json.dumps(["repo-guard", argv, sys.stdin.read()]))\n'
+            '    return 17\n')
+        self.central = self.root / 'Work/agent_config/shims/gh'
+        self.central.parent.mkdir(parents=True)
+        self.central.write_text(
+            '#!/usr/bin/env python3\n'
+            'import json, sys\n'
+            'print(json.dumps(["actions-policy", sys.argv[1:], sys.stdin.read()]))\n'
+            'raise SystemExit(23)\n')
+        self.central.chmod(0o755)
+
+    def invoke(self, checked=False):
+        env = {**os.environ, 'HOME': str(self.root)}
+        env.pop('ACTIONS_POLICY_CHECKED', None)
+        if checked:
+            env['ACTIONS_POLICY_CHECKED'] = '1'
+        return subprocess.run([sys.executable, str(self.shim), 'api', 'repos/example/project'],
+                              env=env, input='request body\n', text=True, capture_output=True)
+
+    def test_existing_gh_shim_delegates_to_actions_policy(self):
+        result = self.invoke()
+        self.assertEqual(result.returncode, 23, result.stderr)
+        self.assertEqual(json.loads(result.stdout),
+                         ['actions-policy', ['api', 'repos/example/project'], 'request body\n'])
+
+    def test_checked_command_returns_to_repo_guard_without_recursion(self):
+        result = self.invoke(checked=True)
+        self.assertEqual(result.returncode, 17, result.stderr)
+        self.assertEqual(json.loads(result.stdout)[0], 'repo-guard')
+
+    def test_missing_actions_policy_keeps_existing_repo_guard(self):
+        self.central.unlink()
+        result = self.invoke()
+        self.assertEqual(result.returncode, 17, result.stderr)
+        self.assertEqual(json.loads(result.stdout)[0], 'repo-guard')
 
 
 if __name__ == '__main__':
