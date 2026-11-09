@@ -1,0 +1,13 @@
+schema = 1
+[app]
+name = "repo-guard-external-checks"
+[base]
+image = "ubuntu:24.04"
+setup = "external-job-setup.sh"
+key = ["job.toml", "external-job-setup.sh"]
+disk = "8G"
+[source]
+history = "full"
+[profiles.checks]
+cpus = 2
+memory = "2G"
