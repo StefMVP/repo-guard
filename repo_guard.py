@@ -1049,9 +1049,10 @@ def linked_gists(contents, gh):
 def real_gh():
     if os.environ.get('REPO_GUARD_GH'):
         return os.environ['REPO_GUARD_GH']
+    guards = {SHIM.resolve(), (Path.home() / 'Work/agent_config/shims/gh').resolve()}
     for folder in os.environ.get('PATH', '').split(os.pathsep):
         item = Path(folder) / 'gh'
-        if item.is_file() and os.access(item, os.X_OK) and item.resolve() != SHIM.resolve():
+        if item.is_file() and os.access(item, os.X_OK) and item.resolve() not in guards:
             return str(item)
     raise GuardError('No gh command was found after the repo-guard wrapper.')
 
@@ -1092,10 +1093,7 @@ def gh_wrapper(argv):
     try:
         gh = real_gh()
         post = gh_posts(argv)
-        # The child gh must not find this wrapper again.
-        env = dict(os.environ, PATH=os.pathsep.join(
-            folder for folder in os.environ.get('PATH', '').split(os.pathsep)
-            if not (Path(folder) / 'gh').resolve() == SHIM.resolve()))
+        env = dict(os.environ)
         if post is None:
             os.execve(gh, [gh, *argv], env)
         stdin = None
