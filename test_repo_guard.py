@@ -1134,6 +1134,37 @@ class GhShimTest(unittest.TestCase):
         self.assertEqual(result.returncode, 17, result.stderr)
         self.assertEqual(json.loads(result.stdout)[0], 'repo-guard')
 
+    def test_native_gh_resolver_skips_both_guards(self):
+        native = self.root / 'native/gh'
+        native.parent.mkdir()
+        native.write_text('#!/bin/sh\nexit 0\n')
+        native.chmod(0o755)
+        env = {**os.environ, 'HOME': str(self.root),
+               'PATH': os.pathsep.join([str(self.shim.parent), str(self.central.parent), str(native.parent)])}
+        env.pop('REPO_GUARD_GH', None)
+        with patch.dict(os.environ, env, clear=True), patch.object(guard, 'SHIM', self.shim):
+            self.assertEqual(guard.real_gh(), str(native))
+
+    def test_native_child_keeps_the_guard_path_without_the_marker(self):
+        shutil.copy2(HERE / 'repo_guard.py', self.checkout / 'repo_guard.py')
+        shutil.copy2(HERE / 'report_html.py', self.checkout / 'report_html.py')
+        native = self.root / 'native-gh'
+        native.write_text('#!/usr/bin/env python3\nimport json, os, shutil\n'
+                          'print(json.dumps([os.environ["PATH"], shutil.which("gh"), '
+                          'os.environ.get("ACTIONS_POLICY_CHECKED")]))\n')
+        native.chmod(0o755)
+        auth = self.root / 'empty-auth'
+        auth.mkdir()
+        path = str(self.shim.parent) + os.pathsep + os.environ['PATH']
+        env = {**os.environ, 'HOME': str(self.root), 'PATH': path,
+               'REPO_GUARD_GH': str(native), 'ACTIONS_POLICY_CHECKED': '1',
+               'GH_TOKEN': 'invalid-offline-probe', 'GITHUB_TOKEN': 'invalid-offline-probe',
+               'GH_CONFIG_DIR': str(auth)}
+        result = subprocess.run([sys.executable, str(self.shim), '--version'],
+                                env=env, text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), [path, str(self.shim), None])
+
 
 if __name__ == '__main__':
     unittest.main()
