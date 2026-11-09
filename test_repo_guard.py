@@ -26,12 +26,14 @@ class GuardTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        (self.root / 'home').mkdir()
         self.repo = self.root / 'repo'
         self.repo.mkdir()
         # Tests use the fictional example policy, not the user's policy.
         config = self.root / 'config'
         shutil.copytree(HERE / 'examples', config)
-        self.env = dict(os.environ, REPO_GUARD_STATE=str(self.root / 'state'), REPO_GUARD_CONFIG=str(config),
+        self.env = dict(os.environ, HOME=str(self.root / 'home'),
+                        REPO_GUARD_STATE=str(self.root / 'state'), REPO_GUARD_CONFIG=str(config),
                         GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_SYSTEM='/dev/null')
         self.environment = patch.dict(os.environ, self.env, clear=True)
         self.environment.start()
@@ -1091,9 +1093,9 @@ class GhShimTest(unittest.TestCase):
         self.shim = self.checkout / 'shims/gh'
         shutil.copy2(HERE / 'shims/gh', self.shim)
         (self.checkout / 'repo_guard.py').write_text(
-            'import json, sys\n'
+            'import json, os, sys\n'
             'def gh_wrapper(argv):\n'
-            '    print(json.dumps(["repo-guard", argv, sys.stdin.read()]))\n'
+            '    print(json.dumps(["repo-guard", argv, sys.stdin.read(), os.environ.get("ACTIONS_POLICY_CHECKED")]))\n'
             '    return 17\n')
         self.central = self.root / 'Work/agent_config/shims/gh'
         self.central.parent.mkdir(parents=True)
@@ -1122,6 +1124,7 @@ class GhShimTest(unittest.TestCase):
         result = self.invoke(checked=True)
         self.assertEqual(result.returncode, 17, result.stderr)
         self.assertEqual(json.loads(result.stdout)[0], 'repo-guard')
+        self.assertIsNone(json.loads(result.stdout)[3])
 
     def test_missing_actions_policy_keeps_existing_repo_guard(self):
         self.central.unlink()
