@@ -36,6 +36,8 @@ This creates a separate repository with the current tracked tree and one
 commit. Keep the original private. A later source change needs a new clean
 copy. A force push can retain old PR refs and cached commits.
 
+Check [file origin](references/release-review.md#file-origin-and-license).
+
 To extract part of a private repository, use an ignored worktree. Remove files
 outside the selected scope, restructure and commit there, then clean its
 history. Keep the original branch intact. Test the clean tree from a depth-1
