@@ -88,8 +88,11 @@ repo-guard approve-binary docs/screen.png --repo . --note 'Sample data only'
 Take `HASH` from `check --json` or the audit file that `prepare-public` names.
 Staged findings need no public-release audit. JSON output contains the rule, source,
 and fingerprint; it does not contain the matched value. An approval applies only to
-that exact value and source. You cannot approve private names or personal paths.
-Change that content instead.
+that exact value and source. For a reviewed public Git author name, take the
+`private-name` fingerprint from the current audit. The same command approves
+only that exact author name and email in this repository. Names in messages,
+files, refs or email fields still fail. Private emails and credentials still fail.
+Other private names and personal paths must be changed.
 
 ## Check text before GitHub posts it
 

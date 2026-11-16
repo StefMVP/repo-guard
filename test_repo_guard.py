@@ -264,7 +264,7 @@ class GuardTest(unittest.TestCase):
                  for item in guard.check(self.repo, 'history')}
         self.assertIn(('private-name', 'commit metadata', named, 1), found)
         self.assertIn(('github-pat', 'commit metadata', token, 1), found)
-        self.assertIn(('private-email', 'commit metadata', author, 3), found)
+        self.assertIn(('private-email', 'Git author email', author, 1), found)
         self.assertIn(('private-name', 'ref and tag metadata', '', 2), found)
         self.assertIn(('sensitive-filename-history', '.env.prod', settings, 5), found)
 
@@ -330,6 +330,53 @@ class GuardTest(unittest.TestCase):
         self.assertIn('github-pat', {item['rule'] for item in guard.check(self.repo, 'staged')})
         self.stage('other.txt', 'API_TOKEN=' + token + '\n')
         self.assertTrue(any(item['path'] == 'other.txt' for item in guard.check(self.repo, 'staged')))
+
+    def test_author_approval_is_exact_and_field_scoped(self):
+        name, email = 'Northwind', '123+public@users.noreply.github.com'
+        self.git('-c', 'user.name=' + name, '-c', 'user.email=' + email,
+                 'commit', '--allow-empty', '-qm', 'Public change')
+        findings = guard.check(self.repo, 'history')
+        match = next(item for item in findings if item['rule'] == 'private-name')
+        self.assertIn('fingerprint', match)
+        self.assertNotIn(name, json.dumps(match))
+        with self.assertRaises(guard.GuardError):
+            guard.approve_finding(self.repo, match['fingerprint'], 'Public identity')
+        guard.save(guard.state_dir(self.repo) / 'audit.json', {'findings': findings})
+        with self.assertRaises(guard.GuardError):
+            guard.approve_finding(self.repo, match['fingerprint'], ' ')
+        snapshot = guard.snapshot(self.repo, {})
+        guard.approve_finding(self.repo, match['fingerprint'], 'Reviewed public identity')
+        self.assertNotEqual(guard.snapshot(self.repo, {}), snapshot)
+        self.assertEqual(guard.check(self.repo, 'history'), [])
+        for changed_name, changed_email in [(name, 'other@example.invalid'),
+                                            (name + 'Cloud', email),
+                                            (name, 'owner@northwind.example'),
+                                            (name, FAKE_TOKEN + '@example.invalid')]:
+            with self.subTest(identity=(changed_name, changed_email)):
+                self.git('-c', 'user.name=' + changed_name, '-c', 'user.email=' + changed_email,
+                         'commit', '--allow-empty', '-qm', 'Public change')
+                current = guard.check(self.repo, 'history', revisions=['HEAD^..HEAD'])
+                self.assertTrue(current)
+                if changed_email == 'owner@northwind.example':
+                    guard.save(guard.state_dir(self.repo) / 'audit.json', {'findings': current})
+                    private = next(item for item in current if item.get('fingerprint'))
+                    guard.approve_finding(self.repo, private['fingerprint'], 'Reviewed name only')
+                    self.assertIn('private-email', {item['rule'] for item in
+                                  guard.check(self.repo, 'history', revisions=['HEAD^..HEAD'])})
+        self.git('branch', 'Northwind-ref')
+        self.stage('sample.txt', name + '\n')
+        self.git('commit', '-qm', 'Public change\n\n' + name + ' <' + email + '>')
+        found = guard.check(self.repo, 'history')
+        self.assertTrue(any(item['rule'] == 'private-email' for item in found))
+        self.assertTrue(any(item['rule'] == 'github-pat' for item in found))
+        for source in ['sample.txt', 'commit metadata', 'ref and tag metadata']:
+            self.assertTrue(any(item['rule'] == 'private-name' and item['path'] == source
+                                for item in found), source)
+        other = self.root / 'other'
+        self.git('clone', '-q', str(self.repo), str(other))
+        guard.git(other, 'config', 'repoGuard.profile', 'candidate')
+        self.assertTrue(any(item.get('fingerprint') == match['fingerprint']
+                            for item in guard.check(other, 'history', config=guard.policy())))
 
     def test_check_json_exposes_only_redacted_finding_identity(self):
         self.stage('sample.txt', 'API_TOKEN=' + FAKE_TOKEN + '\n')
