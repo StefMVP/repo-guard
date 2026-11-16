@@ -135,6 +135,39 @@ Name the checked revision and link the proof. Distinguish real integration
 checks, simulations and unverified cases. State each material gap. A passing
 test count alone does not establish that the documented flow works.
 
+## File origin and license
+
+Keep license obligations separate from file origin. An inherited repository
+LICENSE does not show where an extracted file was written, who authored it, or
+which runtime it needs. Keep valid license terms, copyright notices and genuine
+upstream credits.
+
+Before writing attribution or removing history, run:
+
+```sh
+repo-guard file-history --repo SOURCE --upstream LOCAL_UPSTREAM_REF PATH...
+```
+
+Use the selected source paths and a local upstream ref. The command reads local
+Git data and does not fetch. Keep its output and source maps outside candidate
+Git. It records first additions, rename or copy trails, upstream ancestry and
+exact first-blob presence across upstream history, including deleted files.
+Exit 1 means some history is unknown; exit 0 means evidence was recorded, not
+that attribution was approved.
+
+Compare the recorded paths and content with the relevant upstream revisions.
+Check for copies or modified code at other paths too; Git similarity detection
+and exact blob matches cannot find every such case. Distinguish a recorded
+fork addition from upstream-derived or modified code and from unknown origin.
+A new Git file is not proof of independent invention. Missing refs, shallow
+history, root imports and incomplete objects must not become claims of original
+authorship. Resolve uncertain origin with other evidence or state the limit.
+
+Write only factual, appropriate credit in the candidate. Do not infer upstream
+authorship, dependencies or a product relationship from the repository LICENSE.
+Review runtime dependencies from imports, package metadata and actual execution.
+Keep the detailed source history and attribution decision in the private review.
+
 ## References
 
 [ghui](https://github.com/kitlangton/ghui) and

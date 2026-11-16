@@ -1155,6 +1155,76 @@ def emit(findings, more='Use prepare-public for the full local audit.'):
     return bool(findings)
 
 
+def file_history(repo, revision, upstream, paths):
+    """Report recorded Git history, without assigning authorship or license terms."""
+    def read(*args, allowed=(0,)):
+        return run(['git', '--no-replace-objects', '--literal-pathspecs', *args], repo,
+                   allowed=allowed, env=dict(os.environ, GIT_NO_LAZY_FETCH='1',
+                                             GIT_OPTIONAL_LOCKS='0')).stdout
+
+    result = {'revision': None, 'upstream_revision': None, 'files': [],
+              'limits': 'Git additions and blob matches do not prove authorship, independent invention, '
+                        'license obligations, or runtime dependencies. Review copied or modified content separately.'}
+    try:
+        result['revision'] = read('rev-parse', '--verify', '--end-of-options', revision + '^{commit}').decode().strip()
+        result['upstream_revision'] = read('rev-parse', '--verify', '--end-of-options', upstream + '^{commit}').decode().strip()
+        source, upstream_commit = result['revision'], result['upstream_revision']
+        grafts = Path(read('rev-parse', '--git-path', 'info/grafts').decode().strip())
+        if not grafts.is_absolute():
+            grafts = repo / grafts
+        incomplete = (read('rev-parse', '--is-shallow-repository').strip() == b'true'
+                      or bool(read('replace', '--list').strip()) or grafts.exists()
+                      or not read('merge-base', source, upstream_commit, allowed=(0, 1)).strip())
+        upstream_objects = set(read('rev-list', '--objects', '--no-object-names', upstream_commit).splitlines())
+    except GuardError:
+        incomplete = True
+        upstream_objects = set()
+    for path in paths:
+        if not path or Path(path).is_absolute() or '..' in Path(path).parts:
+            raise GuardError('Use repository-relative file paths without parent traversal.')
+        item = {'path': path, 'history_status': 'unknown', 'trail': [], 'first_addition': None,
+                'first_addition_in_upstream_history': None, 'first_blob_in_upstream_history': None}
+        result['files'].append(item)
+        if incomplete:
+            item['reason'] = 'Missing refs, shallow, replaced, grafted, or unrelated history.'
+            continue
+        try:
+            read('cat-file', '-e', source + ':' + path)
+            tokens = iter(read('log', '--follow', '--format=commit:%H', '--name-status', '-z',
+                               source, '--', path).split(b'\0'))
+            commit = None
+            for token in tokens:
+                token = token.lstrip(b'\n')
+                if not token:
+                    continue
+                if token.startswith(b'commit:'):
+                    commit = token[7:].decode()
+                    continue
+                status = token.decode()
+                old_path = os.fsdecode(next(tokens))
+                new_path = os.fsdecode(next(tokens)) if status.startswith(('R', 'C')) else old_path
+                item['trail'].append({'commit': commit, 'status': status,
+                                      'path': new_path, 'previous_path': old_path})
+            additions = [entry for entry in item['trail'] if entry['status'] == 'A']
+            if len(additions) != 1:
+                item['reason'] = 'No single recorded first addition. Review the history manually.'
+                continue
+            addition = additions[0]
+            item['first_addition'] = {'commit': addition['commit'], 'path': addition['path']}
+            if len(read('rev-list', '--parents', '-n', '1', addition['commit']).split()) < 2:
+                item['reason'] = 'The first recorded addition is a root commit; earlier origin is unknown.'
+                continue
+            blob = read('rev-parse', '--verify', addition['commit'] + ':' + addition['path']).strip()
+            item['first_addition_in_upstream_history'] = run(
+                ['git', '--no-replace-objects', 'merge-base', '--is-ancestor', addition['commit'], upstream_commit],
+                repo, allowed=(0, 1), env=dict(os.environ, GIT_NO_LAZY_FETCH='1')).returncode == 0
+            item['first_blob_in_upstream_history'] = blob in upstream_objects
+            item['history_status'] = 'recorded'
+        except (GuardError, StopIteration):
+            item['reason'] = 'The file or required history objects are unavailable.'
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='action', required=True)
@@ -1167,6 +1237,11 @@ def main(argv=None):
     text.add_argument('--profile', choices=('candidate', 'private'), default='candidate')
     text.add_argument('--target', help='OWNER/REPO whose own links are allowed')
     text.add_argument('--linked-gists', action='store_true', help='Also read and check each gist that the text links')
+    history = commands.add_parser('file-history', help='Print private Git evidence before an extraction loses its history')
+    history.add_argument('--repo', type=Path, default=Path.cwd())
+    history.add_argument('--revision', default='HEAD')
+    history.add_argument('--upstream', required=True, help='Local upstream ref to compare; does not fetch')
+    history.add_argument('paths', nargs='+', help='Source paths; save output outside the candidate repository')
     for name in ('enable', 'check', 'hook', 'prepare-public', 'review', 'publish', 'status', 'approve-binary', 'approve-finding', 'clean-history'):
         sub = commands.add_parser(name)
         sub.add_argument('--repo', type=Path, default=Path.cwd())
@@ -1214,7 +1289,11 @@ def main(argv=None):
             findings = [item for label, data in contents for item in check_text(data, label, args.profile, config)]
             return int(emit(findings))
         repo = repo_root(args.repo)
-        if args.action == 'enable':
+        if args.action == 'file-history':
+            result = file_history(repo, args.revision, args.upstream, args.paths)
+            print(json.dumps(result, indent=2))
+            return int(any(item['history_status'] == 'unknown' for item in result['files']))
+        elif args.action == 'enable':
             print(json.dumps(enable(repo, args.profile, args.allow_private), indent=2))
         elif args.action == 'check':
             findings = check(repo, args.mode)
