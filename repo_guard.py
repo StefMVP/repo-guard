@@ -391,6 +391,35 @@ def tag_metadata(repo, object_id):
     return b'\n'.join(output)
 
 
+def author_findings(repo, options, config):
+    raw = git(repo, 'log', *options, '-z', '--format=%H%x00%an%x00%ae', '--no-ext-diff')
+    try:
+        fields = raw.decode().split('\0')
+    except UnicodeError:
+        raise GuardError('Cannot decode Git author fields exactly.') from None
+    if fields[-1] != '' or (len(fields) - 1) % 3:
+        raise GuardError('Cannot read Git author fields completely.')
+    approvals = load(state_dir(repo) / 'author-approvals.json', {})
+    output, identities = [], {}
+    for offset in range(0, len(fields) - 1, 3):
+        commit, name, email = fields[offset:offset + 3]
+        identity = {'name': name, 'email': email}
+        fingerprint = hashlib.sha256(b'Git author name\0' +
+                                     json.dumps(identity, sort_keys=True).encode()).hexdigest()
+        for item in privacy(name, 'Git author name', config):
+            if item['rule'] == 'private-name':
+                if approvals.get(fingerprint, {}).get('identity') == identity:
+                    continue
+                item['fingerprint'] = fingerprint
+                identities[fingerprint] = identity
+            item['commit'] = commit
+            output.append(item)
+        for item in privacy(email, 'Git author email', config):
+            item['commit'] = commit
+            output.append(item)
+    return output, identities
+
+
 def check(repo, mode, revisions=None, config=None):
     public = public_profile(repo)
     config = config or scoped_policy(repo)
@@ -419,6 +448,7 @@ def check(repo, mode, revisions=None, config=None):
                 kind, object_id = tag.split()
                 if kind == b'tag':
                     metadata += tag_metadata(repo, object_id.decode()) + b'\n'
+        ref_metadata = metadata
         metadata += git(repo, 'log', *options, '--format=guard-commit:%H%n%B%n%an <%ae>', '--name-only', '--no-ext-diff')
         text = metadata.decode(errors='replace')
         found = scanner(repo, mode, data=metadata, label='commit metadata')
@@ -426,7 +456,13 @@ def check(repo, mode, revisions=None, config=None):
             patch = git(repo, '-c', 'core.quotePath=false', 'log', *options, '-p',
                         '--format=guard-commit:%H%n%B', '--no-ext-diff', '--no-textconv')
             output += privacy_history(patch.decode(errors='replace'), config)
-            found += privacy(text, 'commit metadata', config)
+            private_metadata = ref_metadata + git(
+                repo, 'log', *options, '--format=guard-commit:%H%n%B%n',
+                '--name-only', '--no-ext-diff')
+            output += metadata_sources(privacy(private_metadata.decode(errors='replace'),
+                                               'commit metadata', config),
+                                       private_metadata.decode(errors='replace'))
+            output += author_findings(repo, options, config)[0]
             found += [finding('sensitive-filename-history', name, number)
                       for number, name in enumerate(text.splitlines(), 1) if sensitive_name(name)]
         output += metadata_sources(found, text)
@@ -626,7 +662,8 @@ def snapshot(repo, surface):
              git(repo, 'config', '--get', 'repoGuard.publicRepository', allowed=(0, 1)),
              policy_hash().encode(), json.dumps(surface, sort_keys=True).encode(),
              json.dumps(load(state_dir(repo) / 'scanner-exceptions.json', {}), sort_keys=True).encode(),
-             json.dumps(load(state_dir(repo) / 'binary-reviews.json', {}), sort_keys=True).encode()]
+             json.dumps(load(state_dir(repo) / 'binary-reviews.json', {}), sort_keys=True).encode(),
+             json.dumps(load(state_dir(repo) / 'author-approvals.json', {}), sort_keys=True).encode()]
     return hashlib.sha256(b'\0'.join(parts)).hexdigest()
 
 
@@ -857,6 +894,18 @@ def review(repo, decision, report_path):
 def approve_finding(repo, fingerprint, note):
     state = state_dir(repo)
     audit = load(state / 'audit.json', {})
+    author = next((item for item in audit.get('findings', [])
+                   if item.get('fingerprint') == fingerprint and
+                   item.get('rule') == 'private-name' and item.get('path') == 'Git author name'), None)
+    if author:
+        _, identities = author_findings(repo, ['--all', '--full-history', '-m'], scoped_policy(repo))
+        if fingerprint not in identities or not note.strip():
+            raise GuardError('Select a current author-name finding from the audit and give the review reason.')
+        records = load(state / 'author-approvals.json', {})
+        records[fingerprint] = {'identity': identities[fingerprint], 'note': note}
+        save(state / 'author-approvals.json', records)
+        print('Recorded approval for this exact Git author name and email. Run the audit again.')
+        return
     findings = check(repo, 'staged') + audit.get('findings', [])
     item = next((item for item in findings if item.get('fingerprint') == fingerprint), None)
     if not item or not note.strip():
