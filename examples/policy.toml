@@ -19,3 +19,8 @@ personal_path_patterns = [
   '''(?<![\w./\\])(?:file://)?/(?:home|Users)/(?!<|\$|YOUR_|your-|(?:example|user|runner)(?=[/\s"'<>]|$))[^/\s"'<>]+(?:/|(?=[\s"'<>]|$))''',
   '(?i)(?:[a-z]:[\\/]|/mnt/[a-z]/)Users[\\/](?!<|\$|YOUR_|example[\\/]|user[\\/]|runner(?:admin)?[\\/])[^\\/\s"<>]+[\\/]',
 ]
+
+# Private terms that are public names in one target repository only,
+# for example a public product that the repository is a client for.
+# [public_terms]
+# "example-owner/northwind-app" = ["Northwind"]

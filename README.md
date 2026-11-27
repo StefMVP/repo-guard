@@ -38,6 +38,9 @@ cd repo-guard
 It links `repo-guard` into `~/.local/bin`. If you have no policy, it copies the
 [example policy](examples/policy.toml) to `~/.config/repo-guard/policy.toml`.
 Edit that file. Add your private names, domains, email addresses and GitHub owner.
+A private name can be the public subject of one repository, for example a
+public product that it is a client for. List it under `[public_terms]` for
+that target repository only.
 
 `install` also links the `public-repo` agent skill into `~/.claude/skills` and
 `~/.codex/skills` when those folders exist. Use `--skills-dir DIR` to select

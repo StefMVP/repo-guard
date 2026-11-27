@@ -65,6 +65,16 @@ class GuardTest(unittest.TestCase):
         self.assertIn('private-name', {item['rule'] for item in findings})
         self.assertNotIn('Northwind', json.dumps(findings))
 
+    def test_public_terms_apply_only_to_their_target_repository(self):
+        # A private term can be a public product name in one repository only.
+        config = Path(os.environ['REPO_GUARD_CONFIG']) / 'policy.toml'
+        config.write_text(config.read_text() + '\n[public_terms]\n"example-owner/northwind-app" = ["Northwind"]\n')
+        self.stage('README.md', 'A Northwind client.\n')
+        self.git('config', 'repoGuard.publicRepository', 'example-owner/northwind-app')
+        self.assertNotIn('private-name', {item['rule'] for item in guard.check(self.repo, 'staged')})
+        self.git('config', 'repoGuard.publicRepository', 'example-owner/other')
+        self.assertIn('private-name', {item['rule'] for item in guard.check(self.repo, 'staged')})
+
     def test_private_word_does_not_match_inside_a_longer_word(self):
         # A common private word must not flag longer words in a dictionary.
         for value in ('Falcon', 'FalconBot', 'falcon_api', 'See falcon.'):
