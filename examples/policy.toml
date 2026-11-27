@@ -24,3 +24,8 @@ personal_path_patterns = [
 # for example a public product that the repository is a client for.
 # [public_terms]
 # "example-owner/northwind-app" = ["Northwind"]
+
+# Reviewed public Git author identities allowed across all repositories.
+# [[public_authors]]
+# name = "Northwind"
+# email = "123+public@users.noreply.github.com"

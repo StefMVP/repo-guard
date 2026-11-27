@@ -34,6 +34,7 @@ class GuardTest(unittest.TestCase):
         shutil.copytree(HERE / 'examples', config)
         scanner = str(guard.binary())
         self.env = dict(os.environ, HOME=str(self.root / 'home'),
+                        XDG_CONFIG_HOME=str(self.root / 'xdg'),
                         REPO_GUARD_BINARY=scanner,
                         REPO_GUARD_STATE=str(self.root / 'state'), REPO_GUARD_CONFIG=str(config),
                         GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_SYSTEM='/dev/null')
@@ -1162,6 +1163,86 @@ class GuardTest(unittest.TestCase):
             with self.assertRaises(guard.GuardError):
                 guard.clean_history(self.repo, self.root / 'unused', 'owner/project')
         self.assertFalse((self.root / 'unused').exists())
+
+    def test_sensitive_directories_and_nested_local_copies_blocked_in_private_profile(self):
+        self.git('config', 'repoGuard.profile', 'private')
+        (self.repo / '.gitignore').write_text('/local/\n')
+        for path in ('reports/worktree-archive/old/data.js', 'reports/backup/local/cases.js', '.claude/settings.json'):
+            with self.subTest(path=path):
+                self.stage(path, 'plain text without policy terms\n')
+                findings = guard.check(self.repo, 'staged')
+                self.assertIn('sensitive-filename', {item['rule'] for item in findings})
+                self.git('reset', '-q', 'HEAD', '--', path)
+        # Without /local/ in .gitignore, a normal local/ folder is not flagged.
+        (self.repo / '.gitignore').unlink()
+        self.stage('src/local/store.js', 'export const x = 1;\n')
+        self.assertEqual(guard.check(self.repo, 'staged'), [])
+
+    def test_large_staged_file_blocked_in_private_and_candidate_until_approved(self):
+        payload = 'x' * 2048
+        with patch.object(guard, 'MAX_STAGED_BYTES', 1024):
+            for profile in ('private', 'candidate'):
+                with self.subTest(profile=profile):
+                    self.git('config', 'repoGuard.profile', profile)
+                    self.stage('dump.txt', payload)
+                    self.assertIn('large-file', {item['rule'] for item in guard.check(self.repo, 'staged')})
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        self.assertEqual(guard.main(['approve-binary', '--repo', str(self.repo),
+                                                     'dump.txt', '--note', 'Reviewed large fixture']), 0)
+                    self.assertEqual(guard.check(self.repo, 'staged'), [])
+                    (guard.state_dir(self.repo) / 'binary-reviews.json').unlink()
+
+    def test_enable_global_installs_hooks_and_defaults_to_private(self):
+        if tuple(map(int, self.git('--version').split()[2].split('.')[:2])) < (2, 54):
+            self.skipTest('Hook installation requires Git 2.54+.')
+        global_cfg = self.root / 'gitconfig'
+        with patch.dict(os.environ, {'GIT_CONFIG_GLOBAL': str(global_cfg)}):
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(guard.main(['enable', '--global']), 0)
+            fresh = self.root / 'fresh'
+            fresh.mkdir()
+            subprocess.run(['git', 'init', '-q'], cwd=fresh, env=os.environ, check=True)
+            subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=fresh, env=os.environ, check=True)
+            subprocess.run(['git', 'config', 'user.email', 'test@example.invalid'], cwd=fresh, env=os.environ, check=True)
+            subprocess.run(['git', 'config', 'commit.gpgsign', 'false'], cwd=fresh, env=os.environ, check=True)
+            hooks = subprocess.run(['git', 'hook', 'list', 'pre-commit'], cwd=fresh, env=os.environ,
+                                   capture_output=True, text=True, check=True).stdout.strip()
+            self.assertIn('repo-guard-pre-commit', hooks)
+            self.assertFalse(guard.public_profile(fresh))
+            (fresh / 'reports/worktree-archive').mkdir(parents=True)
+            (fresh / 'reports/worktree-archive/copy.js').write_text('data\n')
+            subprocess.run(['git', 'add', 'reports/worktree-archive/copy.js'], cwd=fresh, env=os.environ, check=True)
+            commit = subprocess.run(['git', 'commit', '-qm', 'Should block'], cwd=fresh, env=os.environ, capture_output=True)
+            self.assertEqual(commit.returncode, 1)
+
+    def test_public_authors_in_policy_cover_commits_and_github_metadata(self):
+        name, email = 'Northwind', '123+public@users.noreply.github.com'
+        config = Path(os.environ['REPO_GUARD_CONFIG']) / 'policy.toml'
+        config.write_text(config.read_text() + f'\n[[public_authors]]\nname = "{name}"\nemail = "{email}"\n')
+        self.git('-c', 'user.name=' + name, '-c', 'user.email=' + email,
+                 'commit', '--allow-empty', '-qm', 'Public change')
+        self.assertEqual(guard.check(self.repo, 'history'), [])
+        self.git('-c', 'user.name=' + name, '-c', 'user.email=other@example.invalid',
+                 'commit', '--allow-empty', '-qm', 'Different email')
+        self.assertIn('private-name', {item['rule'] for item in guard.check(self.repo, 'history', revisions=['HEAD^..HEAD'])})
+
+    def test_prepare_public_blocks_unreviewed_media_and_records_commit(self):
+        self.stage('README.md', 'Example project\n')
+        self.stage('LICENSE', 'MIT\n')
+        shot = self.repo / 'docs/shot.png'
+        shot.parent.mkdir(parents=True, exist_ok=True)
+        shot.write_bytes(b'\x89PNG\0sample screenshot')
+        self.git('add', 'docs/shot.png')
+        self.git('commit', '-qm', 'Add screenshot')
+        added = self.git('rev-parse', 'HEAD')
+        audit = guard.prepare(self.repo, local_only=True, target='owner/project')
+        self.assertEqual(audit['media_to_review'][0]['commit'], added)
+        self.assertIn('media-review', {item['rule'] for item in audit['findings']})
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(guard.main(['approve-binary', '--repo', str(self.repo),
+                                         'docs/shot.png', '--note', 'Sample data only']), 0)
+        clean = guard.prepare(self.repo, local_only=True, target='owner/project')
+        self.assertNotIn('media-review', {item['rule'] for item in clean['findings']})
 
 
 class GhShimTest(unittest.TestCase):
