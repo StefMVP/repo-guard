@@ -85,9 +85,10 @@ tools that track checkouts.
 ## Continuing checks
 
 `prepare-public` enables the hooks: `private` for a private repository during
-cleanup, `candidate` otherwise. Run `repo-guard enable --repo CHECKOUT
---profile candidate` in each new working clone of a public repository and
-verify with `repo-guard status --repo CHECKOUT`.
+cleanup, `candidate` otherwise. When `repo-guard` is used on the repository,
+run `repo-guard enable --repo CHECKOUT --profile candidate` in each new working
+clone, verify with `repo-guard status --repo CHECKOUT`, and remove any
+homegrown duplicate privacy hooks or scripts before release.
 
 For a requested PR, run local checks and attach proof. The `shims/gh` wrapper
 checks PR text when first on PATH. Keep code merge separate from public release.
