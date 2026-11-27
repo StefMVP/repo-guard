@@ -4,6 +4,9 @@ on:
   merge_group:
   push:
     branches: [main]
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

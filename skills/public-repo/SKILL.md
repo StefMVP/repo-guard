@@ -9,9 +9,10 @@ Use `repo-guard` for checks. Keep private rules and review evidence
 outside the target repository. Follow the repository's instructions and keep
 unrelated changes intact.
 
-Public text serves the project's users. Apply the user's global writing rules.
-Keep README text to purpose, installation, configuration and use. Add other
-sections only when the user asks or a reader needs them to complete a task.
+Public text serves the project's users. Apply the user's writing rules.
+Keep README text to purpose, installation, configuration and use. Prefer
+screenshots or visuals where a reader can see the product or result.
+Add other sections only when the user asks or a reader needs them.
 Do not add development checklists, audit notes, release-readiness claims, or
 captions about how screenshots were made. Put test methods, screenshot
 provenance and verification limits in the private review. Delete text that
@@ -60,15 +61,14 @@ git push -u origin main
 ```
 
 Run the full audit after the push. If the user renamed an old repository to
-free its name, repoint each old clone before creating the new target. GitHub
-stops the redirect when the name is reused.
+free its name, repoint each old clone first: a reused name stops the redirect.
 
 ## Review
 
 1. Run `repo-guard prepare-public --repo CHECKOUT`. Read its `audit.json`.
    It enables hooks, fetches remote branches, tags and PR heads, and scans
    history, GitHub text, retained Actions logs and accessible artifacts.
-   A failed or incomplete scan is not clean. For deliberate fixture data,
+   A failed or partial scan is not clean. For deliberate fixture data,
    inspect the exact hit, use `repo-guard approve-finding --repo CHECKOUT
    --fingerprint HASH --note REASON`, then run a new audit.
 2. Read the [release review criteria](references/release-review.md). Inspect
@@ -108,9 +108,9 @@ repo-guard publish --repo CHECKOUT --confirm OWNER/REPO
 Publication requires a matching ready review and pushed default branch. It
 confirms secret scanning and push protection or restores private visibility.
 
-Make the clean checkout the working checkout. Preserve the old private copy,
-move the clean checkout to the intended path, and register its new path with
-tools that track checkouts.
+Make the clean checkout the working checkout. Keep the old private copy, move
+the clean checkout to the intended path, and register the new path with tools
+that track checkouts.
 
 ## Continuing checks
 

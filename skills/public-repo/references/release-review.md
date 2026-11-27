@@ -49,9 +49,13 @@ See [GitHub's topic guide](https://docs.github.com/en/repositories/managing-your
 
 ## Screenshots and example output
 
-Include a screenshot when it helps a reader understand the UI, workflow or
-result before installation. For a library or a simple CLI, a code sample or
-terminal output can be sufficient.
+Prefer visuals in the README. When the project has a UI, a visible result
+(a report, chart, render or page) or a multi-step flow, show it with a
+screenshot, a short GIF or a diagram near the start, after the first sentence.
+Add one image for each other main screen or result only when the reader needs
+it to choose or use the feature. A README with no image for such a project is
+an inspection finding. For a library or a simple CLI, a code sample or terminal
+output can be sufficient.
 
 Capture the current core flow with populated public sample data. Inspect the
 saved image for private paths, names, accounts, browser tabs and credentials.
@@ -172,7 +176,7 @@ Keep the detailed source history and attribution decision in the private review.
 
 [ghui](https://github.com/kitlangton/ghui) and
 [OpenCode](https://github.com/anomalyco/opencode) show purpose, a product image
-and installation near the start. Use that order when it helps the reader.
+and installation near the start; the image comes before long text. Use that order when it helps the reader.
 [stack's package setup](https://github.com/kitlangton/stack/blob/main/package.json)
 shows explicit package contents and a package check. Adapt the practice to the
 project's stack and size.
