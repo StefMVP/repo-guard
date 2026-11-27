@@ -388,6 +388,24 @@ class GuardTest(unittest.TestCase):
         self.assertTrue(any(item.get('fingerprint') == match['fingerprint']
                             for item in guard.check(other, 'history', config=guard.policy())))
 
+    def test_author_approval_covers_the_same_identity_in_github_metadata(self):
+        identity = {'name': 'Northwind', 'email': '123+public@users.noreply.github.com'}
+        run = {'head_commit': {'message': 'Change', 'author': dict(identity), 'committer': dict(identity)}}
+        surface = {'resources': {'actions/runs': [{'workflow_runs': [run]}]}}
+        self.assertIn('Northwind', guard.surface_text(surface))
+        self.assertNotIn('Northwind', guard.surface_text(surface, [identity]))
+        other = {'name': 'Northwind', 'email': 'other@example.invalid'}
+        self.assertIn('Northwind', guard.surface_text(surface, [other]))
+
+    def test_findings_name_the_fix(self):
+        for rule, hint in (('personal-path', '/home/example'), ('worktree-path', 'example-*'),
+                           ('private-name', '[public_terms]'), ('binary-review', 'approve-binary'),
+                           ('github-pat', 'approve-finding')):
+            output = io.StringIO()
+            with self.subTest(rule=rule), contextlib.redirect_stdout(output):
+                guard.emit([guard.finding(rule, 'README.md', 1)])
+            self.assertIn(hint, output.getvalue())
+
     def test_check_json_exposes_only_redacted_finding_identity(self):
         self.stage('sample.txt', 'API_TOKEN=' + FAKE_TOKEN + '\n')
         output = io.StringIO()
@@ -982,12 +1000,16 @@ class GuardTest(unittest.TestCase):
             if args[:2] == ['git', 'fetch']:
                 return subprocess.CompletedProcess(args, 0, b'', b'')
             return original(args, repo, **kwargs)
-        for configured, expected in (('private', 'private'), (None, 'candidate')):
+        # A private working repository keeps normal commits during cleanup.
+        for configured, private, expected in (('private', True, 'private'), (None, True, 'private'),
+                                              (None, False, 'candidate')):
+            surface['repository']['private'] = private
             if configured:
                 self.git('config', 'repoGuard.profile', configured)
             else:
                 self.git('config', '--unset', 'repoGuard.profile')
-            with self.subTest(configured=configured), patch.object(guard, 'github_surface', return_value=surface), \
+            with self.subTest(configured=configured, private=private), \
+                 patch.object(guard, 'github_surface', return_value=surface), \
                  patch.object(guard, 'run', side_effect=local):
                 guard.prepare(self.repo)
             self.assertEqual(self.git('config', 'repoGuard.profile'), expected)

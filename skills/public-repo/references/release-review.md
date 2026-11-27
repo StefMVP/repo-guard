@@ -6,18 +6,16 @@ confirmed bugs, inspection findings and optional improvements.
 
 ## README
 
-Apply the user's global writing instructions. Use ASD-STE100 Simplified
-Technical English. Keep the README short: purpose, installation, configuration
-and use. Add a limit only when it changes a user's setup or action.
+Apply the user's writing rules. Keep the README short: purpose, installation,
+configuration and use. Add a limit only when it changes a user's setup or action.
 
 - Start with what the project does. Give the shortest path to a useful result.
 - State dependencies before the commands that need them. Use portable paths.
 - Explain a command's output only when it is not clear from the command.
-- Keep the full option list in CLI help. Keep code checks in the project's
-  existing scripts and package configuration.
-- Do not add Check changes, Testing, Validation, release checklists or similar
-  README sections as an audit requirement. Add contributor instructions only
-  when the user asks for them. Run checks and put proof in the private review.
+- Keep the full option list in CLI help. Move a rule that a program can
+  enforce into code or a check, not README prose.
+- Do not add Testing, Validation or release checklist sections. Add
+  contributor instructions only when the user asks. Put proof in the review.
 - Remove process narration, screenshot-production captions, implementation
   notes, audit status, disclaimers and provenance that do not help the reader
   use the project. A product image does not need a paragraph about its capture.
@@ -69,20 +67,16 @@ existing exact-content approval when the image passes review.
 
 ## Installation, packages and local checks
 
-Keep GitHub Actions disabled on new repositories unless the user asks for them.
-Disable Actions before the first push. Use local checks for proof. Do not add
-automatic workflow triggers. Record Actions status in the review; disabled
-Actions do not require a replacement paid service.
+Use local checks for proof. Do not add automatic workflow triggers. Record
+Actions status in the review; disabled Actions need no paid replacement.
 
 - Run the documented core flow. Verify the install and first-use commands in a
   clean temporary environment when they change or have not been checked.
 - For a distributed package, inspect the built artifact's file list. Confirm
   that it includes the documented entry points and required assets. Check for
   unintended files. Install and start the artifact, not just the source checkout.
-- Use the project's existing test, type, lint and format checks as applicable.
-  Use the existing check command; a new README check section is not required.
-  Test observed bugs and their edge cases: reproduce the bug in a test, fix it, then show the
-  test passes.
+- Use the project's existing test, type, lint and format checks. Reproduce an
+  observed bug and its edge cases in a test, fix it, then show the test passes.
 - Keep publication and deployment separate from local checks. Full-history
   scans and this review belong to release preparation.
 
@@ -180,10 +174,3 @@ and installation near the start; the image comes before long text. Use that orde
 [stack's package setup](https://github.com/kitlangton/stack/blob/main/package.json)
 shows explicit package contents and a package check. Adapt the practice to the
 project's stack and size.
-
-## Public product names
-
-A private term can be the public subject of the repository, for example a
-public product that the project is a client for. Confirm that the product is
-public, then list the term under `[public_terms]` for the exact target
-repository in the user's policy. Do not remove it from the global list.
