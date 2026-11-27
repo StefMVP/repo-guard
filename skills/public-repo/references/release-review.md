@@ -96,8 +96,9 @@ Check these kinds of values:
   into the directories of other tools.
 - Hosts and services: local ports, private hostnames, service URLs, API
   endpoints and download sources.
-- Tools: required commands, their minimum versions and the result when a tool
-  is missing.
+- Tools: required commands, their minimum versions, the result when a tool
+  is missing, and whether every required dependency or linked repository is
+  public.
 - Numbers: limits, timeouts, sizes, intervals, retries and thresholds.
 - Policy: rules, word lists and defaults that show one person's preferences.
 

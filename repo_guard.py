@@ -241,11 +241,34 @@ def privacy(text, path, config=None):
     return output
 
 
-def sensitive_name(name):
-    leaf = Path(name).name.lower()
+SENSITIVE_DIRS = {'.worktrees', '.claude', 'worktree-archive', '.playwright-cli', '.proof'}
+MAX_STAGED_BYTES = 5 * 1024 * 1024
+MEDIA_RE = re.compile(r'\.(?:png|jpe?g|gif|webp|pdf|zip|gz|mp4|wav)$', re.I)
+
+
+def root_ignored_local(repo):
+    ignore = repo / '.gitignore'
+    if not ignore.is_file():
+        return ()
+    for line in ignore.read_text(errors='replace').splitlines():
+        if line.strip() in ('/local/', 'local/', '/local'):
+            return ('local',)
+    return ()
+
+
+def sensitive_name(name, ignored_dirs=()):
+    parts = [part.lower() for part in Path(name).parts]
+    if any(part in SENSITIVE_DIRS or part in ignored_dirs for part in parts[:-1]):
+        return True
+    leaf = parts[-1] if parts else ''
     if leaf == '.env' or (leaf.startswith('.env.') and not re.search(r'\.(?:example|sample|template)$', leaf)):
         return True
     return bool(re.search(r'^(?:id_(?:rsa|ed25519|ecdsa)|.*(?:private[-_]?key|credentials)\.(?:pem|key|json)|.*\.(?:p12|pfx))$', leaf))
+
+
+def public_authors(config):
+    return [{'name': item.get('name'), 'email': item.get('email')}
+            for item in config.get('public_authors', []) if isinstance(item, dict)]
 
 
 def scoped_policy(repo):
@@ -405,6 +428,7 @@ def author_findings(repo, options, config):
     if fields[-1] != '' or (len(fields) - 1) % 3:
         raise GuardError('Cannot read Git author fields completely.')
     approvals = load(state_dir(repo) / 'author-approvals.json', {})
+    configured = public_authors(config)
     output, identities = [], {}
     for offset in range(0, len(fields) - 1, 3):
         commit, name, email = fields[offset:offset + 3]
@@ -413,7 +437,7 @@ def author_findings(repo, options, config):
                                      json.dumps(identity, sort_keys=True).encode()).hexdigest()
         for item in privacy(name, 'Git author name', config):
             if item['rule'] == 'private-name':
-                if approvals.get(fingerprint, {}).get('identity') == identity:
+                if identity in configured or approvals.get(fingerprint, {}).get('identity') == identity:
                     continue
                 item['fingerprint'] = fingerprint
                 identities[fingerprint] = identity
@@ -425,15 +449,43 @@ def author_findings(repo, options, config):
     return output, identities
 
 
+def staged_large_files(repo, names):
+    if not names:
+        return []
+    index = git(repo, '--literal-pathspecs', 'ls-files', '--stage', '-z', '--', *[os.fsdecode(name) for name in names])
+    objects = {}
+    for entry in index.split(b'\0'):
+        if not entry:
+            continue
+        metadata, name = entry.split(b'\t', 1)
+        _, object_id, stage = metadata.split()
+        if stage != b'0':
+            raise GuardError('Resolve index conflicts before the scan.')
+        objects[name] = object_id
+    request = b'\n'.join(objects[name] for name in names) + b'\n'
+    meta = run(['git', 'cat-file', '--batch-check=%(objecttype) %(objectsize)'], repo, data=request).stdout.splitlines()
+    output = []
+    for name, line in zip(names, meta):
+        parts = line.split()
+        if len(parts) == 2 and parts[0] == b'blob' and int(parts[1]) > MAX_STAGED_BYTES:
+            blob = hashlib.sha256(git(repo, 'cat-file', 'blob', objects[name].decode())).hexdigest()
+            if not binary_approved(repo, blob):
+                output.append(finding('large-file', os.fsdecode(name)))
+    return output
+
+
 def check(repo, mode, revisions=None, config=None):
     public = public_profile(repo)
     config = config or scoped_policy(repo)
     output = scanner(repo, mode, revisions)
+    ignored_dirs = root_ignored_local(repo)
     if mode == 'staged':
         names = [name for name in git(repo, 'diff', '--cached', '--name-only', '--diff-filter=ACMRT', '-z').split(b'\0') if name]
         contents = staged_blobs(repo, names) if public else [(os.fsdecode(name), b'') for name in names]
+        if not public:
+            output += staged_large_files(repo, names)
         for name, content in contents:
-            if sensitive_name(name):
+            if sensitive_name(name, ignored_dirs):
                 output.append(finding('sensitive-filename', name))
             if public:
                 output += privacy(name, 'staged path', config)
@@ -442,6 +494,8 @@ def check(repo, mode, revisions=None, config=None):
                     if not binary_approved(repo, blob):
                         output.append(finding('binary-review', name))
                 else:
+                    if len(content) > MAX_STAGED_BYTES and not binary_approved(repo, blob):
+                        output.append(finding('large-file', name))
                     output += privacy(content.decode(errors='replace'), name, config)
     else:
         options = revisions or ['--all', '--full-history', '-m']
@@ -469,7 +523,7 @@ def check(repo, mode, revisions=None, config=None):
                                        private_metadata.decode(errors='replace'))
             output += author_findings(repo, options, config)[0]
             found += [finding('sensitive-filename-history', name, number)
-                      for number, name in enumerate(text.splitlines(), 1) if sensitive_name(name)]
+                      for number, name in enumerate(text.splitlines(), 1) if sensitive_name(name, ignored_dirs)]
         output += metadata_sources(found, text)
     # Keep the report small without hiding distinct locations.
     return list({json.dumps(item, sort_keys=True): item for item in output}.values())
@@ -496,11 +550,15 @@ def metadata_sources(findings, text):
 EVENTS = {'pre-commit': 'staged', 'commit-msg': 'message', 'pre-push': 'push'}
 
 
-def enable(repo, profile, allow_private=False):
-    version = git(repo, '--version').decode()
+def require_git_hooks(repo=None):
+    version = run(['git', '--version'], repo).stdout.decode()
     numbers = re.search(r'(\d+)\.(\d+)', version)
     if not numbers or tuple(map(int, numbers.groups())) < (2, 54):
         raise GuardError('Hook installation needs Git 2.54 or newer. Existing hooks were preserved.')
+
+
+def enable(repo, profile, allow_private=False):
+    require_git_hooks(repo)
     if profile == 'private' and public_profile(repo) and not allow_private:
         raise GuardError('This checkout has the candidate profile. Add --allow-private to lower it to private.')
     git(repo, 'config', '--local', 'repoGuard.profile', profile)
@@ -509,6 +567,15 @@ def enable(repo, profile, allow_private=False):
         git(repo, 'config', '--local', key + '.event', event)
         git(repo, 'config', '--local', key + '.command', shlex.join([str(CLI), 'hook', event]))
     return {'profile': profile, 'hooks': list(EVENTS)}
+
+
+def enable_global():
+    require_git_hooks()
+    for event in EVENTS:
+        key = 'hook.repo-guard-' + event
+        run(['git', 'config', '--global', key + '.event', event])
+        run(['git', 'config', '--global', key + '.command', shlex.join([str(CLI), 'hook', event])])
+    return {'scope': 'global', 'default_profile': 'private', 'hooks': list(EVENTS)}
 
 
 def hook(repo, event, args, stdin):
@@ -817,7 +884,7 @@ def prepare(repo, local_only=False, target=None):
     if local_only:
         config['public_repository'] = surface['repository']['full_name']
     output = check(repo, 'history', config=config)
-    approved = [item['identity'] for item in load(state_dir(repo) / 'author-approvals.json', {}).values()]
+    approved = public_authors(config) + [item['identity'] for item in load(state_dir(repo) / 'author-approvals.json', {}).values()]
     metadata = surface_text(surface, approved).encode()
     output += scanner(repo, 'history', data=metadata, label='GitHub metadata')
     output += privacy(metadata.decode(), 'GitHub metadata', config)
@@ -838,13 +905,29 @@ def prepare(repo, local_only=False, target=None):
             output += scanner(repo, 'history', data=text, label=f'Actions artifact {item["id"]}')
             output += privacy(text.decode(errors='replace'), f'Actions artifact {item["id"]}', config)
     # Media and packaged releases need content inspection, not a text-only pass.
-    binary_paths = []
-    for line in git(repo, 'rev-list', '--objects', '--all').decode(errors='replace').splitlines():
-        pieces = line.split(' ', 1)
-        if len(pieces) != 2 or not re.search(r'\.(?:png|jpe?g|gif|webp|pdf|zip|gz|mp4|wav)$', pieces[1], re.I):
+    binary_paths, seen_media = [], set()
+    raw = git(repo, 'log', '--all', '--full-history', '-m', '--diff-filter=AM',
+              '--raw', '--no-abbrev', '--format=guard-commit:%H', '-z')
+    tokens = iter(raw.split(b'\0'))
+    commit = ''
+    for token in tokens:
+        token = token.lstrip(b'\n')
+        if not token:
             continue
-        blob, path = pieces
-        binary_paths.append({'object': blob, 'path': path})
+        if token.startswith(b'guard-commit:'):
+            commit = token[13:].decode()
+            continue
+        if token.startswith(b':'):
+            fields = token.decode(errors='replace').split()
+            path = os.fsdecode(next(tokens, b''))
+            if len(fields) >= 4 and MEDIA_RE.search(path):
+                oid = fields[3]
+                if (oid, path) not in seen_media:
+                    seen_media.add((oid, path))
+                    binary_paths.append({'object': oid, 'path': path, 'commit': commit})
+                    digest = hashlib.sha256(git(repo, 'cat-file', 'blob', oid)).hexdigest()
+                    if not binary_approved(repo, digest):
+                        output.append(finding('media-review', path, 0, commit))
     for page in resources.get('releases', []):
         for release in page:
             for asset in release.get('assets', []):
@@ -1207,6 +1290,8 @@ FIXES = {
     'private-name': 'private-name: remove the name. For a public product name of this repository, add it '
                     'to [public_terms] in the policy. For a reviewed public Git author, use approve-finding.',
     'binary-review': 'binary-review: inspect the file, then run repo-guard approve-binary FILE --note REASON.',
+    'large-file': 'large-file: remove the large file or inspect it, then run repo-guard approve-binary FILE --note REASON.',
+    'media-review': 'media-review: inspect each image or archive. For a current file, run repo-guard approve-binary FILE --note REASON. For deleted historical media, use repo-guard clean-history.',
     'credential': 'Credential: remove it. For a fake test value, run repo-guard check --json, then '
                   'repo-guard approve-finding --fingerprint HASH --note REASON.',
 }
@@ -1336,6 +1421,8 @@ def main(argv=None):
             sub.add_argument('--profile', choices=('private', 'candidate'), default='candidate')
             sub.add_argument('--allow-private', action='store_true',
                              help='Lower a candidate checkout to the private profile')
+            sub.add_argument('--global', dest='global_hooks', action='store_true',
+                             help='Install Git 2.54 hooks globally (defaults to private profile unless a checkout sets candidate)')
         if name == 'check':
             sub.add_argument('--mode', choices=('staged', 'history'), default='staged')
             sub.add_argument('--json', action='store_true', help='Print redacted findings and their exact fingerprints')
@@ -1376,6 +1463,9 @@ def main(argv=None):
                 contents += linked_gists(contents, real_gh())
             findings = [item for label, data in contents for item in check_text(data, label, args.profile, config)]
             return int(emit(findings))
+        if args.action == 'enable' and args.global_hooks:
+            print(json.dumps(enable_global(), indent=2))
+            return 0
         repo = repo_root(args.repo)
         if args.action == 'file-history':
             result = file_history(repo, args.revision, args.upstream, args.paths)

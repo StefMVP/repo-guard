@@ -47,7 +47,9 @@ def render(audit, review=None, decision=None):
                    '</td><td><code>' + escape(str(item.get('commit', ''))) + '</code></td></tr>'
                    for item in audit['findings'])
     media = ''.join('<li><code>' + escape(item['path']) + '</code> · <code>' +
-                    escape(item['object']) + '</code></li>' for item in audit.get('media_to_review', []))
+                    escape(item['object']) + '</code>' +
+                    (' · <code>' + escape(item['commit'][:12]) + '</code>' if item.get('commit') else '') +
+                    '</li>' for item in audit.get('media_to_review', []))
     manual = ''.join('<li>' + escape(item) + '</li>' for item in audit.get('manual_surfaces', []))
     guide = ('<p><a href="' + escape(audit['review_guide'], quote=True) + '">Release review criteria</a></p>'
              if audit.get('review_guide') else '')

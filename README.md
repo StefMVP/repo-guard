@@ -51,16 +51,17 @@ domains, email addresses and GitHub owner. The example explains each field.
 
 ## Use
 
-Turn on the hooks in each clone:
+Turn on the hooks globally (defaults to `private` profile) or in each clone:
 
 ```sh
+repo-guard enable --global
 repo-guard enable --repo path/to/project --profile candidate
 ```
 
 | Profile | Checks |
 | --- | --- |
-| `candidate` | Credentials, private names, domains, emails, repository links, personal and worktree paths, sensitive file names and new binary files. Use it for a public repository or one that you will publish. |
-| `private` | Credentials and sensitive file names. Use it for a private repository. |
+| `candidate` | Credentials, private names, domains, emails, repository links, personal and worktree paths, sensitive file and folder names, large files (> 5 MB) and new binary files. Use it for a public repository or one that you will publish. |
+| `private` | Credentials, sensitive file and folder names and large files (> 5 MB). Use it for a private repository. |
 
 The hooks check staged files, the commit message and each pushed commit. A
 finding or a scan error stops the operation. Existing hooks continue to run.

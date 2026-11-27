@@ -35,9 +35,10 @@ approval. Do not ask to publish when the user asked to keep it private.
    repo-guard review --repo CHECKOUT --decision ready --report PRIVATE_REPORT.html
    ```
 
-   Use `blocked` while required work remains. After a code, ref, GitHub
-   content or policy change, audit again and update the review. Give the user
-   the repository and report links.
+   Use `blocked` while required work remains. Update GitHub settings (description,
+   topics, homepage, and disabling unused wiki, projects or Actions) before the
+   final `prepare-public`: any change to code, refs, GitHub content or policy
+   invalidates the audit snapshot. Give the user the repository and report links.
 
 ## Fresh history
 
