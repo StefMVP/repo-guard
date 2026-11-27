@@ -672,11 +672,14 @@ def snapshot(repo, surface):
     return hashlib.sha256(b'\0'.join(parts)).hexdigest()
 
 
-def surface_text(value):
+def surface_text(value, approved=()):
+    """Join GitHub text. Skip commit identities that match an approved Git author."""
     if isinstance(value, dict):
-        return '\n'.join(surface_text(item) for item in value.values())
+        if {'name': value.get('name'), 'email': value.get('email')} in approved:
+            return ''
+        return '\n'.join(surface_text(item, approved) for item in value.values())
     if isinstance(value, list):
-        return '\n'.join(surface_text(item) for item in value)
+        return '\n'.join(surface_text(item, approved) for item in value)
     return value if isinstance(value, str) else ''
 
 
@@ -796,10 +799,7 @@ def prepare(repo, local_only=False, target=None):
         raise GuardError('Use an exact OWNER/REPO as the planned target.')
     if git(repo, 'rev-parse', '--is-shallow-repository').strip() == b'true':
         raise GuardError('Full history is required. Fetch the complete repository before this audit.')
-    # A private profile stays during cleanup, so commits that still hold
-    # private names can land. clean-history and publish turn on candidate.
     current = git(repo, 'config', '--get', 'repoGuard.profile', allowed=(0, 1)).decode().strip()
-    enable(repo, current or 'candidate')
     if local_only:
         source = load(state_dir(repo) / 'clean-source.json', {})
         name = target or source.get('source_repository') or github_name(repo)
@@ -810,11 +810,15 @@ def prepare(repo, local_only=False, target=None):
         git(repo, 'fetch', '--prune', '--tags', 'origin',
             '+refs/heads/*:refs/remotes/origin/*', '+refs/pull/*/head:refs/repo-guard/pr/*')
         surface = github_surface(repo)
+    # A private repository gets the private profile, so cleanup commits that
+    # still hold private names can land. clean-history and publish turn on candidate.
+    enable(repo, current or ('private' if surface['repository']['private'] is True else 'candidate'))
     config = scoped_policy(repo)
     if local_only:
         config['public_repository'] = surface['repository']['full_name']
     output = check(repo, 'history', config=config)
-    metadata = surface_text(surface).encode()
+    approved = [item['identity'] for item in load(state_dir(repo) / 'author-approvals.json', {}).values()]
+    metadata = surface_text(surface, approved).encode()
     output += scanner(repo, 'history', data=metadata, label='GitHub metadata')
     output += privacy(metadata.decode(), 'GitHub metadata', config)
     name = surface['repository']['full_name']
@@ -1196,6 +1200,21 @@ def gh_wrapper(argv):
     return subprocess.run([gh, *argv], input=stdin, env=env).returncode
 
 
+FIXES = {
+    'personal-path': 'personal-path: use /home/example/, $HOME or <home> in public text.',
+    'worktree-path': 'worktree-path: use example-*, sample-*, demo-* or <checkout> names. '
+                     'Keep local paths in settings outside Git.',
+    'private-name': 'private-name: remove the name. For a public product name of this repository, add it '
+                    'to [public_terms] in the policy. For a reviewed public Git author, use approve-finding.',
+    'binary-review': 'binary-review: inspect the file, then run repo-guard approve-binary FILE --note REASON.',
+    'credential': 'Credential: remove it. For a fake test value, run repo-guard check --json, then '
+                  'repo-guard approve-finding --fingerprint HASH --note REASON.',
+}
+NO_APPROVAL = {'private-domain', 'private-email', 'private-repo-url', 'sensitive-filename',
+               'sensitive-filename-history', 'release-asset-review', 'secret-scanning-off',
+               'missing-readme', 'missing-license'}
+
+
 def emit(findings, more='Use prepare-public for the full local audit.'):
     for item in findings[:100]:
         print(f'{item["rule"]}: {item["path"]}:{item["line"]}')
@@ -1204,8 +1223,12 @@ def emit(findings, more='Use prepare-public for the full local audit.'):
     if not findings:
         print('No findings from active credential and repository policy checks. '
               'Review project-specific content before sharing.')
-    elif any(item['rule'] == 'worktree-path' for item in findings):
-        print('Use example-* checkout names in public examples. Keep local paths in settings outside Git.')
+    rules = {item['rule'] for item in findings}
+    for rule, fix in FIXES.items():
+        if rule in rules:
+            print(fix)
+    if rules - set(FIXES) - NO_APPROVAL:
+        print(FIXES['credential'])
     return bool(findings)
 
 
@@ -1279,6 +1302,16 @@ def file_history(repo, revision, upstream, paths):
     return result
 
 
+DESCRIPTIONS = {
+    'clean-history': 'Copy the current tracked files and the local Git excludes of a clean, private GitHub '
+                     'repository into a new repository with one commit by your GitHub noreply address. The '
+                     'source does not change. Then run prepare-public --local-only --target OWNER/NEW_REPO '
+                     'on the copy, and the full audit after you push it.',
+    'prepare-public': 'Audit all refs, pull request heads, commit metadata and GitHub content. Write a '
+                      'private HTML report. Change nothing on GitHub.',
+}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='action', required=True)
@@ -1297,7 +1330,7 @@ def main(argv=None):
     history.add_argument('--upstream', required=True, help='Local upstream ref to compare; does not fetch')
     history.add_argument('paths', nargs='+', help='Source paths; save output outside the candidate repository')
     for name in ('enable', 'check', 'hook', 'prepare-public', 'review', 'publish', 'status', 'approve-binary', 'approve-finding', 'clean-history'):
-        sub = commands.add_parser(name)
+        sub = commands.add_parser(name, description=DESCRIPTIONS.get(name))
         sub.add_argument('--repo', type=Path, default=Path.cwd())
         if name == 'enable':
             sub.add_argument('--profile', choices=('private', 'candidate'), default='candidate')
@@ -1319,8 +1352,9 @@ def main(argv=None):
                              help='Audit local history only; a full GitHub audit is still required for publication')
             sub.add_argument('--target', help='Planned OWNER/REPO for a local-only audit before creation')
         if name == 'clean-history':
-            sub.add_argument('--destination', type=Path, required=True)
-            sub.add_argument('--confirm', required=True)
+            sub.add_argument('--destination', type=Path, required=True,
+                             help='New repository path, for example CHECKOUT/.worktrees/public-source')
+            sub.add_argument('--confirm', required=True, help='OWNER/REPO of the clean, private source repository')
         if name == 'approve-binary':
             sub.add_argument('file', type=Path)
             sub.add_argument('--note', required=True)
