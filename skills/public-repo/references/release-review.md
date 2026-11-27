@@ -180,3 +180,10 @@ and installation near the start; the image comes before long text. Use that orde
 [stack's package setup](https://github.com/kitlangton/stack/blob/main/package.json)
 shows explicit package contents and a package check. Adapt the practice to the
 project's stack and size.
+
+## Public product names
+
+A private term can be the public subject of the repository, for example a
+public product that the project is a client for. Confirm that the product is
+public, then list the term under `[public_terms]` for the exact target
+repository in the user's policy. Do not remove it from the global list.

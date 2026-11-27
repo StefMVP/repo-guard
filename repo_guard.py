@@ -256,6 +256,11 @@ def scoped_policy(repo):
         planned = git(repo, 'config', '--get', 'repoGuard.publicRepository', allowed=(0, 1)).decode().strip()
         if planned:
             config['public_repository'] = planned
+    # [public_terms] lists private terms that are public names in one target
+    # repository, for example a public product that the repository is about.
+    allowed = {term.lower() for term in config.get('public_terms', {}).get(config.get('public_repository', ''), [])}
+    for key in ('private_terms', 'private_words'):
+        config[key] = [term for term in config.get(key, []) if term.lower() not in allowed]
     return config
 
 
